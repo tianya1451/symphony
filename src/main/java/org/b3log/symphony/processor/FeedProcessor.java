@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -23,8 +23,8 @@ import org.b3log.latke.ioc.Inject;
 import org.b3log.latke.logging.Level;
 import org.b3log.latke.logging.Logger;
 import org.b3log.latke.service.LangPropsService;
-import org.b3log.latke.servlet.HTTPRequestContext;
-import org.b3log.latke.servlet.HTTPRequestMethod;
+import org.b3log.latke.servlet.HttpMethod;
+import org.b3log.latke.servlet.RequestContext;
 import org.b3log.latke.servlet.annotation.RequestProcessing;
 import org.b3log.latke.servlet.annotation.RequestProcessor;
 import org.b3log.latke.servlet.renderer.RssRenderer;
@@ -32,7 +32,6 @@ import org.b3log.latke.util.Locales;
 import org.b3log.symphony.SymphonyServletListener;
 import org.b3log.symphony.model.Article;
 import org.b3log.symphony.model.Option;
-import org.b3log.symphony.model.UserExt;
 import org.b3log.symphony.model.feed.RSSCategory;
 import org.b3log.symphony.model.feed.RSSChannel;
 import org.b3log.symphony.model.feed.RSSItem;
@@ -105,14 +104,14 @@ public class FeedProcessor {
      *
      * @param context the specified context
      */
-    @RequestProcessing(value = "/rss/recent.xml", method = {HTTPRequestMethod.GET, HTTPRequestMethod.HEAD})
-    public void genRecentRSS(final HTTPRequestContext context) {
+    @RequestProcessing(value = "/rss/recent.xml", method = {HttpMethod.GET, HttpMethod.HEAD})
+    public void genRecentRSS(final RequestContext context) {
         final RssRenderer renderer = new RssRenderer();
         context.setRenderer(renderer);
 
         try {
             final RSSChannel channel = new RSSChannel();
-            final JSONObject result = articleQueryService.getRecentArticles(UserExt.USER_AVATAR_VIEW_MODE_C_STATIC, 0, 1, Symphonys.getInt("indexArticlesCnt"));
+            final JSONObject result = articleQueryService.getRecentArticles(0, 1, Symphonys.getInt("indexArticlesCnt"));
             final List<JSONObject> articles = (List<JSONObject>) result.get(Article.ARTICLES);
             for (int i = 0; i < articles.size(); i++) {
                 RSSItem item = getItem(articles, i);
@@ -146,8 +145,9 @@ public class FeedProcessor {
      *
      * @param context the specified context
      */
-    @RequestProcessing(value = "/rss/domain/{domainURI}.xml", method = {HTTPRequestMethod.GET, HTTPRequestMethod.HEAD})
-    public void genDomainRSS(final HTTPRequestContext context, final String domainURI) {
+    @RequestProcessing(value = "/rss/domain/{domainURI}.xml", method = {HttpMethod.GET, HttpMethod.HEAD})
+    public void genDomainRSS(final RequestContext context) {
+        final String domainURI = context.pathVar("domainURI");
         final RssRenderer renderer = new RssRenderer();
         context.setRenderer(renderer);
 
@@ -161,7 +161,7 @@ public class FeedProcessor {
 
             final RSSChannel channel = new RSSChannel();
             final String domainId = domain.optString(Keys.OBJECT_ID);
-            final JSONObject result = articleQueryService.getDomainArticles(UserExt.USER_AVATAR_VIEW_MODE_C_STATIC, domainId, 1, Symphonys.getInt("indexArticlesCnt"));
+            final JSONObject result = articleQueryService.getDomainArticles(domainId, 1, Symphonys.getInt("indexArticlesCnt"));
             final List<JSONObject> articles = (List<JSONObject>) result.get(Article.ARTICLES);
             for (int i = 0; i < articles.size(); i++) {
                 RSSItem item = getItem(articles, i);
@@ -198,7 +198,6 @@ public class FeedProcessor {
         ret.setTitle(title);
         String description = article.getString(Article.ARTICLE_CONTENT);
         description = shortLinkQueryService.linkArticle(description);
-        description = shortLinkQueryService.linkTag(description);
         description = Emotions.toAliases(description);
         description = Emotions.convert(description);
         description = Markdowns.toHTML(description);

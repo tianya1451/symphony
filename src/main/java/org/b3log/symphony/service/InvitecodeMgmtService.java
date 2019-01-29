@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -62,7 +62,7 @@ public class InvitecodeMgmtService {
         final long now = System.currentTimeMillis();
         final long expired = now - Symphonys.getLong("invitecode.expired");
 
-        final Query query = new Query().setCurrentPageNum(1).setPageSize(Integer.MAX_VALUE).
+        final Query query = new Query().setPage(1, Integer.MAX_VALUE).
                 setFilter(CompositeFilterOperator.and(
                         new PropertyFilter(Invitecode.STATUS, FilterOperator.EQUAL, Invitecode.STATUS_C_UNUSED),
                         new PropertyFilter(Invitecode.GENERATOR_ID, FilterOperator.NOT_EQUAL, Pointtransfer.ID_C_SYS),
@@ -133,9 +133,8 @@ public class InvitecodeMgmtService {
      *
      * @param quantity the specified quantity
      * @param memo     the specified memo
-     * @throws ServiceException service exception
      */
-    public void adminGenInvitecodes(final int quantity, final String memo) throws ServiceException {
+    public void adminGenInvitecodes(final int quantity, final String memo) {
         final Transaction transaction = invitecodeRepository.beginTransaction();
 
         try {
@@ -158,7 +157,6 @@ public class InvitecodeMgmtService {
             }
 
             LOGGER.log(Level.ERROR, "Generates invitecodes failed", e);
-            throw new ServiceException(e);
         }
     }
 

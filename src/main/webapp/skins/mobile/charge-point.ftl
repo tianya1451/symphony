@@ -1,7 +1,7 @@
 <#--
 
     Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
-    Copyright (C) 2012-2018, b3log.org & hacpai.com
+    Copyright (C) 2012-2019, b3log.org & hacpai.com
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published by
@@ -36,7 +36,7 @@
                     </div>
                     <br>
                     <ul>
-                        <li>转账时请在备注里填写你的黑客派用户名</li>
+                        <li>转账时请在备注里填写你的社区用户名</li>
                         <li>如果你忘记填写用户名（扫码转账可能无法输入备注），可以<a href="${servePath}/post?type=1&tags=充值积分&at=88250">点此发帖</a>：
                             <ul>
                                 <li>在内容中 <code>@88250</code></li>

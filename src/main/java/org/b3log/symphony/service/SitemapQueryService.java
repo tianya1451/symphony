@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -106,9 +106,8 @@ public class SitemapQueryService {
      * @param sitemap the specified sitemap
      */
     public void genArticles(final Sitemap sitemap) {
-        final Query query = new Query().setCurrentPageNum(1).setPageCount(Integer.MAX_VALUE).
-                addProjection(Keys.OBJECT_ID, String.class).
-                addProjection(Article.ARTICLE_UPDATE_TIME, Long.class).
+        final Query query = new Query().setPage(1, Integer.MAX_VALUE).setPageCount(Integer.MAX_VALUE).
+                select(Keys.OBJECT_ID, Article.ARTICLE_UPDATE_TIME).
                 setFilter(new PropertyFilter(Article.ARTICLE_STATUS, FilterOperator.NOT_EQUAL, Article.ARTICLE_STATUS_C_INVALID)).
                 addSort(Keys.OBJECT_ID, SortDirection.DESCENDING);
 

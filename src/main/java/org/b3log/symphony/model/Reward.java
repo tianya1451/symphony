@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -58,7 +58,7 @@ public final class Reward {
     public static final int TYPE_C_ARTICLE = 0;
 
     /**
-     * Reward type - comment.
+     * Reward type - comment (thank comment).
      */
     public static final int TYPE_C_COMMENT = 1;
 

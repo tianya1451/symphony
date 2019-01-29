@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -22,7 +22,6 @@ import org.b3log.latke.logging.Level;
 import org.b3log.latke.logging.Logger;
 import org.b3log.latke.repository.RepositoryException;
 import org.b3log.latke.repository.Transaction;
-import org.b3log.latke.service.ServiceException;
 import org.b3log.latke.service.annotation.Service;
 import org.b3log.symphony.repository.OptionRepository;
 import org.json.JSONObject;
@@ -95,9 +94,8 @@ public class OptionMgmtService {
      *
      * @param optionId the given option id
      * @param option   the specified option
-     * @throws ServiceException service exception
      */
-    public void updateOption(final String optionId, final JSONObject option) throws ServiceException {
+    public void updateOption(final String optionId, final JSONObject option) {
         final Transaction transaction = optionRepository.beginTransaction();
 
         try {
@@ -110,7 +108,6 @@ public class OptionMgmtService {
             }
 
             LOGGER.log(Level.ERROR, "Updates an option[id=" + optionId + "] failed", e);
-            throw new ServiceException(e);
         }
     }
 }

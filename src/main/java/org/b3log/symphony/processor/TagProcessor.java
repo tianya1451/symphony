@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -22,26 +22,27 @@ import org.b3log.latke.Keys;
 import org.b3log.latke.Latkes;
 import org.b3log.latke.ioc.Inject;
 import org.b3log.latke.model.Pagination;
-import org.b3log.latke.servlet.HTTPRequestContext;
-import org.b3log.latke.servlet.HTTPRequestMethod;
+import org.b3log.latke.servlet.HttpMethod;
+import org.b3log.latke.servlet.RequestContext;
 import org.b3log.latke.servlet.annotation.After;
 import org.b3log.latke.servlet.annotation.Before;
 import org.b3log.latke.servlet.annotation.RequestProcessing;
 import org.b3log.latke.servlet.annotation.RequestProcessor;
 import org.b3log.latke.servlet.renderer.AbstractFreeMarkerRenderer;
 import org.b3log.latke.util.Paginator;
+import org.b3log.latke.util.URLs;
 import org.b3log.symphony.model.*;
 import org.b3log.symphony.processor.advice.AnonymousViewCheck;
 import org.b3log.symphony.processor.advice.PermissionGrant;
 import org.b3log.symphony.processor.advice.stopwatch.StopwatchEndAdvice;
 import org.b3log.symphony.processor.advice.stopwatch.StopwatchStartAdvice;
 import org.b3log.symphony.service.*;
+import org.b3log.symphony.util.Sessions;
 import org.b3log.symphony.util.Symphonys;
 import org.json.JSONObject;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -49,14 +50,14 @@ import java.util.Map;
 /**
  * Tag processor.
  * <ul>
- * <li>Shows tags wall (/tags), GET</li>
- * <li>Shows tag articles (/tag/{tagTitle}), GET</li>
+ * <li>Shows the tags wall (/tags), GET</li>
+ * <li>Show tag articles (/tag/{tagURI}), GET</li>
  * <li>Query tags (/tags/query), GET</li>
  * </ul>
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
  * @author <a href="http://vanessa.b3log.org">Liyuan Li</a>
- * @version 1.7.0.13, Jun 6, 2018
+ * @version 1.7.0.15, Jan 5, 2019
  * @since 0.2.0
  */
 @RequestProcessor
@@ -95,21 +96,19 @@ public class TagProcessor {
     /**
      * Queries tags.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/tags/query", method = HTTPRequestMethod.GET)
-    public void queryTags(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response) {
-        if (null == request.getAttribute(Common.CURRENT_USER)) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+    @RequestProcessing(value = "/tags/query", method = HttpMethod.GET)
+    public void queryTags(final RequestContext context) {
+        if (!Sessions.isLoggedIn()) {
+            context.setStatus(HttpServletResponse.SC_FORBIDDEN);
 
             return;
         }
 
         context.renderJSON().renderTrueResult();
 
-        final String titlePrefix = request.getParameter("title");
+        final String titlePrefix = context.param("title");
 
         List<JSONObject> tags;
         final int fetchSize = 7;
@@ -130,19 +129,13 @@ public class TagProcessor {
     /**
      * Shows tags wall.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/tags", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, AnonymousViewCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showTagsWall(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("tags.ftl");
+    @RequestProcessing(value = "/tags", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, AnonymousViewCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showTagsWall(final RequestContext context) {
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "tags.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         final List<JSONObject> trendTags = tagQueryService.getTrendTags(Symphonys.getInt("tagsWallTrendCnt"));
@@ -151,38 +144,34 @@ public class TagProcessor {
         dataModel.put(Common.TREND_TAGS, trendTags);
         dataModel.put(Common.COLD_TAGS, coldTags);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
-     * Shows tag articles.
+     * Show tag articles.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @param tagURI   the specified tag URI
-     * @throws Exception exception
+     * @param context the specified context
      */
     @RequestProcessing(value = {"/tag/{tagURI}", "/tag/{tagURI}/hot", "/tag/{tagURI}/good", "/tag/{tagURI}/reply",
-            "/tag/{tagURI}/perfect"}, method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, AnonymousViewCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showTagArticles(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                                final String tagURI) throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("tag-articles.ftl");
+            "/tag/{tagURI}/perfect"}, method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, AnonymousViewCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showTagArticles(final RequestContext context) {
+        final String tagURI = context.pathVar("tagURI");
+        final HttpServletRequest request = context.getRequest();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "tag-articles.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
         final int pageNum = Paginator.getPage(request);
         int pageSize = Symphonys.getInt("indexArticlesCnt");
 
-        final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject user = Sessions.getUser();
         if (null != user) {
             pageSize = user.optInt(UserExt.USER_LIST_PAGE_SIZE);
 
             if (!UserExt.finshedGuide(user)) {
-                response.sendRedirect(Latkes.getServePath() + "/guide");
+                context.sendRedirect(Latkes.getServePath() + "/guide");
 
                 return;
             }
@@ -190,32 +179,26 @@ public class TagProcessor {
 
         final JSONObject tag = tagQueryService.getTagByURI(tagURI);
         if (null == tag) {
-            response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            context.sendError(HttpServletResponse.SC_NOT_FOUND);
 
             return;
         }
-
         tag.put(Common.IS_RESERVED, tagQueryService.isReservedTag(tag.optString(Tag.TAG_TITLE)));
-
         dataModel.put(Tag.TAG, tag);
-
         final String tagId = tag.optString(Keys.OBJECT_ID);
-
         final List<JSONObject> relatedTags = tagQueryService.getRelatedTags(tagId, Symphonys.getInt("tagRelatedTagsCnt"));
         tag.put(Tag.TAG_T_RELATED_TAGS, (Object) relatedTags);
 
         final boolean isLoggedIn = (Boolean) dataModel.get(Common.IS_LOGGED_IN);
         if (isLoggedIn) {
-            final JSONObject currentUser = (JSONObject) dataModel.get(Common.CURRENT_USER);
+            final JSONObject currentUser = Sessions.getUser();
             final String followerId = currentUser.optString(Keys.OBJECT_ID);
 
             final boolean isFollowing = followQueryService.isFollowing(followerId, tagId, Follow.FOLLOWING_TYPE_C_TAG);
             dataModel.put(Common.IS_FOLLOWING, isFollowing);
         }
 
-        final int avatarViewMode = (int) request.getAttribute(UserExt.USER_AVATAR_VIEW_MODE);
-
-        String sortModeStr = StringUtils.substringAfter(request.getRequestURI(), "/tag/" + tagURI);
+        String sortModeStr = StringUtils.substringAfter(context.requestURI(), "/tag/" + tagURI);
         int sortMode;
         switch (sortModeStr) {
             case "":
@@ -242,16 +225,12 @@ public class TagProcessor {
                 sortMode = 0;
         }
 
-        final List<JSONObject> articles = articleQueryService.getArticlesByTag(avatarViewMode, sortMode, tag,
-                pageNum, pageSize);
+        final List<JSONObject> articles = articleQueryService.getArticlesByTag(sortMode, tag, pageNum, pageSize);
         dataModel.put(Article.ARTICLES, articles);
-
-        final JSONObject tagCreator = tagQueryService.getCreator(avatarViewMode, tagId);
-
+        final JSONObject tagCreator = tagQueryService.getCreator(tagId);
         tag.put(Tag.TAG_T_CREATOR_THUMBNAIL_URL, tagCreator.optString(Tag.TAG_T_CREATOR_THUMBNAIL_URL));
         tag.put(Tag.TAG_T_CREATOR_NAME, tagCreator.optString(Tag.TAG_T_CREATOR_NAME));
-        tag.put(Tag.TAG_T_PARTICIPANTS, (Object) tagQueryService.getParticipants(
-                avatarViewMode, tagId, Symphonys.getInt("tagParticipantsCnt")));
+        tag.put(Tag.TAG_T_PARTICIPANTS, (Object) tagQueryService.getParticipants(tagId, Symphonys.getInt("tagParticipantsCnt")));
 
         final int tagRefCnt = tag.getInt(Tag.TAG_REFERENCE_CNT);
         final int pageCount = (int) Math.ceil(tagRefCnt / (double) pageSize);
@@ -271,7 +250,7 @@ public class TagProcessor {
         dataModelService.fillSideTags(dataModel);
         dataModelService.fillLatestCmts(dataModel);
 
-        dataModel.put(Common.CURRENT, StringUtils.substringAfter(URLDecoder.decode(request.getRequestURI(), "UTF-8"),
+        dataModel.put(Common.CURRENT, StringUtils.substringAfter(URLs.decode(context.requestURI()),
                 "/tag/" + tagURI));
     }
 }

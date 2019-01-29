@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -23,8 +23,8 @@ import org.b3log.latke.Latkes;
 import org.b3log.latke.ioc.Inject;
 import org.b3log.latke.service.LangPropsService;
 import org.b3log.latke.service.ServiceException;
-import org.b3log.latke.servlet.HTTPRequestContext;
-import org.b3log.latke.servlet.HTTPRequestMethod;
+import org.b3log.latke.servlet.HttpMethod;
+import org.b3log.latke.servlet.RequestContext;
 import org.b3log.latke.servlet.annotation.After;
 import org.b3log.latke.servlet.annotation.Before;
 import org.b3log.latke.servlet.annotation.RequestProcessing;
@@ -42,14 +42,10 @@ import org.b3log.symphony.service.BreezemoonMgmtService;
 import org.b3log.symphony.service.BreezemoonQueryService;
 import org.b3log.symphony.service.DataModelService;
 import org.b3log.symphony.service.OptionQueryService;
-import org.b3log.symphony.util.Geos;
-import org.b3log.symphony.util.Headers;
-import org.b3log.symphony.util.StatusCodes;
-import org.b3log.symphony.util.Symphonys;
+import org.b3log.symphony.util.*;
 import org.json.JSONObject;
 
 import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 import java.util.List;
 import java.util.Map;
 
@@ -65,7 +61,7 @@ import java.util.Map;
  * </ul>
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
- * @version 1.0.1.1, Sep 4, 2018
+ * @version 1.0.1.2, Jan 5, 2019
  * @since 2.8.0
  */
 @RequestProcessor
@@ -104,30 +100,25 @@ public class BreezemoonProcessor {
     /**
      * Shows breezemoon page.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/watch/breezemoons", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, AnonymousViewCheck.class})
-    @After(adviceClass = {CSRFToken.class, PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showWatchBreezemoon(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("breezemoon.ftl");
+    @RequestProcessing(value = "/watch/breezemoons", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, AnonymousViewCheck.class})
+    @After({CSRFToken.class, PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showWatchBreezemoon(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "breezemoon.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
         final int pageNum = Paginator.getPage(request);
         int pageSize = Symphonys.getInt("indexArticlesCnt");
-        final int avatarViewMode = (int) request.getAttribute(UserExt.USER_AVATAR_VIEW_MODE);
-        final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject user = Sessions.getUser();
         String currentUserId = null;
         if (null != user) {
             pageSize = user.optInt(UserExt.USER_LIST_PAGE_SIZE);
 
             if (!UserExt.finshedGuide(user)) {
-                response.sendRedirect(Latkes.getServePath() + "/guide");
+                context.sendRedirect(Latkes.getServePath() + "/guide");
 
                 return;
             }
@@ -136,18 +127,18 @@ public class BreezemoonProcessor {
         }
 
         final int windowSize = Symphonys.getInt("latestArticlesWindowSize");
-        final JSONObject result = breezemoonQueryService.getFollowingUserBreezemoons(avatarViewMode, currentUserId, pageNum, pageSize, windowSize);
+        final JSONObject result = breezemoonQueryService.getFollowingUserBreezemoons(currentUserId, pageNum, pageSize, windowSize);
         final List<JSONObject> bms = (List<JSONObject>) result.opt(Breezemoon.BREEZEMOONS);
         dataModel.put(Common.WATCHING_BREEZEMOONS, bms);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
         dataModelService.fillRandomArticles(dataModel);
         dataModelService.fillSideHotArticles(dataModel);
         dataModelService.fillSideTags(dataModel);
         dataModelService.fillLatestCmts(dataModel);
 
         dataModel.put(Common.SELECTED, Common.WATCH);
-        dataModel.put(Common.CURRENT, StringUtils.substringAfter(request.getRequestURI(), "/watch"));
+        dataModel.put(Common.CURRENT, StringUtils.substringAfter(context.requestURI(), "/watch"));
     }
 
     /**
@@ -162,14 +153,15 @@ public class BreezemoonProcessor {
      * </p>
      *
      * @param context the specified context
-     * @param request the specified request
      */
-    @RequestProcessing(value = "/breezemoon", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, LoginCheck.class, CSRFCheck.class, PermissionCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void addBreezemoon(final HTTPRequestContext context, final HttpServletRequest request, final JSONObject requestJSONObject) {
+    @RequestProcessing(value = "/breezemoon", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, LoginCheck.class, CSRFCheck.class, PermissionCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void addBreezemoon(final RequestContext context) {
         context.renderJSON();
 
+        final HttpServletRequest request = context.getRequest();
+        final JSONObject requestJSONObject = context.requestJSON();
         if (isInvalid(context, requestJSONObject)) {
             return;
         }
@@ -177,7 +169,7 @@ public class BreezemoonProcessor {
         final JSONObject breezemoon = new JSONObject();
         final String breezemoonContent = requestJSONObject.optString(Breezemoon.BREEZEMOON_CONTENT);
         breezemoon.put(Breezemoon.BREEZEMOON_CONTENT, breezemoonContent);
-        final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject user = Sessions.getUser();
         final String authorId = user.optString(Keys.OBJECT_ID);
         breezemoon.put(Breezemoon.BREEZEMOON_AUTHOR_ID, authorId);
         final String ip = Requests.getRemoteAddr(request);
@@ -211,14 +203,15 @@ public class BreezemoonProcessor {
      * </p>
      *
      * @param context the specified context
-     * @param request the specified request
      */
-    @RequestProcessing(value = "/breezemoon/{id}", method = HTTPRequestMethod.PUT)
-    @Before(adviceClass = {StopwatchStartAdvice.class, LoginCheck.class, CSRFCheck.class, PermissionCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void updateBreezemoon(final HTTPRequestContext context, final HttpServletRequest request, final JSONObject requestJSONObject,
-                                 final String id) {
+    @RequestProcessing(value = "/breezemoon/{id}", method = HttpMethod.PUT)
+    @Before({StopwatchStartAdvice.class, LoginCheck.class, CSRFCheck.class, PermissionCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void updateBreezemoon(final RequestContext context) {
+        final String id = context.pathVar("id");
         context.renderJSON();
+        final HttpServletRequest request = context.getRequest();
+        final JSONObject requestJSONObject = context.requestJSON();
         if (isInvalid(context, requestJSONObject)) {
             return;
         }
@@ -229,7 +222,7 @@ public class BreezemoonProcessor {
                 throw new ServiceException(langPropsService.get("queryFailedLabel"));
             }
 
-            final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+            final JSONObject user = Sessions.getUser();
             if (!old.optString(Breezemoon.BREEZEMOON_AUTHOR_ID).equals(user.optString(Keys.OBJECT_ID))) {
                 throw new ServiceException(langPropsService.get("sc403Label"));
             }
@@ -256,13 +249,12 @@ public class BreezemoonProcessor {
      * Removes a breezemoon.
      *
      * @param context the specified context
-     * @param request the specified request
      */
-    @RequestProcessing(value = "/breezemoon/{id}", method = HTTPRequestMethod.DELETE)
-    @Before(adviceClass = {StopwatchStartAdvice.class, LoginCheck.class, CSRFCheck.class, PermissionCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void removeBreezemoon(final HTTPRequestContext context, final HttpServletRequest request, final JSONObject requestJSONObject,
-                                 final String id) {
+    @RequestProcessing(value = "/breezemoon/{id}", method = HttpMethod.DELETE)
+    @Before({StopwatchStartAdvice.class, LoginCheck.class, CSRFCheck.class, PermissionCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void removeBreezemoon(final RequestContext context) {
+        final String id = context.pathVar("id");
         context.renderJSON();
 
         try {
@@ -271,7 +263,7 @@ public class BreezemoonProcessor {
                 throw new ServiceException(langPropsService.get("queryFailedLabel"));
             }
 
-            final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+            final JSONObject user = Sessions.getUser();
             if (!breezemoon.optString(Breezemoon.BREEZEMOON_AUTHOR_ID).equals(user.optString(Keys.OBJECT_ID))) {
                 throw new ServiceException(langPropsService.get("sc403Label"));
             }
@@ -285,7 +277,7 @@ public class BreezemoonProcessor {
         }
     }
 
-    private boolean isInvalid(final HTTPRequestContext context, final JSONObject requestJSONObject) {
+    private boolean isInvalid(final RequestContext context, final JSONObject requestJSONObject) {
         String breezemoonContent = requestJSONObject.optString(Breezemoon.BREEZEMOON_CONTENT);
         breezemoonContent = StringUtils.trim(breezemoonContent);
         final long length = StringUtils.length(breezemoonContent);

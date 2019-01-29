@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -17,32 +17,34 @@
  */
 package org.b3log.symphony.service;
 
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.math.RandomUtils;
 import org.b3log.latke.Keys;
 import org.b3log.latke.Latkes;
 import org.b3log.latke.ioc.Inject;
+import org.b3log.latke.logging.Level;
 import org.b3log.latke.logging.Logger;
 import org.b3log.latke.model.User;
 import org.b3log.latke.service.LangPropsService;
 import org.b3log.latke.service.annotation.Service;
+import org.b3log.latke.servlet.RequestContext;
 import org.b3log.latke.util.Locales;
 import org.b3log.latke.util.Stopwatchs;
 import org.b3log.symphony.SymphonyServletListener;
 import org.b3log.symphony.cache.DomainCache;
 import org.b3log.symphony.model.*;
 import org.b3log.symphony.util.Markdowns;
+import org.b3log.symphony.util.Sessions;
 import org.b3log.symphony.util.Symphonys;
 import org.json.JSONObject;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 import java.util.*;
 
 /**
  * Data model service.
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
- * @version 1.12.2.35, Aug 20, 2018
+ * @version 1.12.2.38, Jan 24, 2019
  * @since 0.2.0
  */
 @Service
@@ -126,14 +128,19 @@ public class DataModelService {
     private DomainCache domainCache;
 
     /**
+     * Breezemoon query service.
+     */
+    @Inject
+    private BreezemoonQueryService breezemoonQueryService;
+
+    /**
      * Fills relevant articles.
      *
-     * @param avatarViewMode the specified avatar view mode
-     * @param dataModel      the specified data model
-     * @param article        the specified article
+     * @param dataModel the specified data model
+     * @param article   the specified article
      * @throws Exception exception
      */
-    public void fillRelevantArticles(final int avatarViewMode, final Map<String, Object> dataModel, final JSONObject article) {
+    public void fillRelevantArticles(final Map<String, Object> dataModel, final JSONObject article) {
         final int articleStatus = article.optInt(Article.ARTICLE_STATUS);
         if (Article.ARTICLE_STATUS_C_INVALID == articleStatus) {
             dataModel.put(Common.SIDE_RELEVANT_ARTICLES, Collections.emptyList());
@@ -144,7 +151,7 @@ public class DataModelService {
         Stopwatchs.start("Fills relevant articles");
         try {
             dataModel.put(Common.SIDE_RELEVANT_ARTICLES,
-                    articleQueryService.getRelevantArticles(avatarViewMode, article, Symphonys.getInt("sideRelevantArticlesCnt")));
+                    articleQueryService.getRelevantArticles(article, Symphonys.getInt("sideRelevantArticlesCnt")));
         } finally {
             Stopwatchs.end();
         }
@@ -202,10 +209,7 @@ public class DataModelService {
         Stopwatchs.start("Fills side tags");
         try {
             dataModel.put(Common.SIDE_TAGS, tagQueryService.getTags(Symphonys.getInt("sideTagsCnt")));
-
-            if (!(Boolean) dataModel.get(Common.IS_MOBILE)) {
-                fillNewTags(dataModel);
-            }
+            fillNewTags(dataModel);
         } finally {
             Stopwatchs.end();
         }
@@ -242,12 +246,10 @@ public class DataModelService {
     /**
      * Fills header.
      *
-     * @param request   the specified request
-     * @param response  the specified response
+     * @param context   the specified request context
      * @param dataModel the specified data model
      */
-    private void fillHeader(final HttpServletRequest request, final HttpServletResponse response,
-                            final Map<String, Object> dataModel) {
+    private void fillHeader(final RequestContext context, final Map<String, Object> dataModel) {
         fillMinified(dataModel);
         dataModel.put(Common.STATIC_RESOURCE_VERSION, Latkes.getStaticResourceVersion());
         dataModel.put("esEnabled", Symphonys.getBoolean("es.enabled"));
@@ -256,15 +258,15 @@ public class DataModelService {
         dataModel.put("algoliaSearchKey", Symphonys.get("algolia.searchKey"));
         dataModel.put("algoliaIndex", Symphonys.get("algolia.index"));
 
-        // fillTrendTags(dataModel);
-        fillPersonalNav(request, response, dataModel);
-
+        fillPersonalNav(dataModel);
         fillLangs(dataModel);
         fillSideAd(dataModel);
         fillHeaderBanner(dataModel);
         fillSideTips(dataModel);
-
+        fillSideBreezemoons(dataModel);
         fillDomainNav(dataModel);
+
+        dataModel.put(Common.CSRF_TOKEN, Sessions.getCSRFToken(context));
     }
 
     /**
@@ -302,17 +304,13 @@ public class DataModelService {
     /**
      * Fills header and footer.
      *
-     * @param request   the specified request
-     * @param response  the specified response
+     * @param context   the specified request context
      * @param dataModel the specified data model
      */
-    public void fillHeaderAndFooter(final HttpServletRequest request, final HttpServletResponse response, final Map<String, Object> dataModel) {
+    public void fillHeaderAndFooter(final RequestContext context, final Map<String, Object> dataModel) {
         Stopwatchs.start("Fills header");
         try {
-            final boolean isMobile = (Boolean) request.getAttribute(Common.IS_MOBILE);
-            dataModel.put(Common.IS_MOBILE, isMobile);
-
-            fillHeader(request, response, dataModel);
+            fillHeader(context, dataModel);
         } finally {
             Stopwatchs.end();
         }
@@ -324,41 +322,35 @@ public class DataModelService {
             Stopwatchs.end();
         }
 
-        dataModel.put(Common.WEBSOCKET_SCHEME, Symphonys.get("websocket.scheme"));
+        final String serverScheme = Latkes.getServerScheme();
+        dataModel.put(Common.WEBSOCKET_SCHEME, StringUtils.containsIgnoreCase(serverScheme, "https") ? "wss" : "ws");
         dataModel.put(Common.MARKED_AVAILABLE, Markdowns.MARKED_AVAILABLE);
     }
 
     /**
      * Fills personal navigation.
      *
-     * @param request   the specified request
-     * @param response  the specified response
      * @param dataModel the specified data model
      */
-    private void fillPersonalNav(final HttpServletRequest request, final HttpServletResponse response, final Map<String, Object> dataModel) {
+    private void fillPersonalNav(final Map<String, Object> dataModel) {
         Stopwatchs.start("Fills personal nav");
         try {
-            dataModel.put(Common.IS_LOGGED_IN, false);
+            final boolean isLoggedIn = Sessions.isLoggedIn();
+            dataModel.put(Common.IS_LOGGED_IN, isLoggedIn);
             dataModel.put(Common.IS_ADMIN_LOGGED_IN, false);
 
-            final JSONObject curUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
-            if (null == curUser) {
-                dataModel.put("loginLabel", langPropsService.get("loginLabel"));
 
+            if (!isLoggedIn) {
                 return;
             }
 
             dataModel.put(Common.IS_LOGGED_IN, true);
             dataModel.put(Common.LOGOUT_URL, userQueryService.getLogoutURL("/"));
-            dataModel.put("logoutLabel", langPropsService.get("logoutLabel"));
-
+            final JSONObject curUser = Sessions.getUser();
             final String userRole = curUser.optString(User.USER_ROLE);
             dataModel.put(User.USER_ROLE, userRole);
-
             dataModel.put(Common.IS_ADMIN_LOGGED_IN, Role.ROLE_ID_C_ADMIN.equals(userRole));
-
-            avatarQueryService.fillUserAvatarURL(curUser.optInt(UserExt.USER_AVATAR_VIEW_MODE), curUser);
-
+            avatarQueryService.fillUserAvatarURL(curUser);
             final String userId = curUser.optString(Keys.OBJECT_ID);
 
             final long followingArticleCnt = followQueryService.getFollowingCount(userId, Follow.FOLLOWING_TYPE_C_ARTICLE);
@@ -385,7 +377,6 @@ public class DataModelService {
             dataModel.put(Notification.NOTIFICATION_T_UNREAD_COUNT, 0); // AJAX polling 
 
             dataModel.put(Common.IS_DAILY_CHECKIN, activityQueryService.isCheckedinToday(userId));
-            dataModel.put(Common.USE_CAPTCHA_CHECKIN, Symphonys.getBoolean("geetest.enabled"));
 
             final int livenessMax = Symphonys.getInt("activitYesterdayLivenessReward.maxPoint");
             final int currentLiveness = livenessQueryService.getCurrentLivenessPoint(userId);
@@ -410,6 +401,25 @@ public class DataModelService {
                 break;
             default:
                 throw new AssertionError();
+        }
+    }
+
+    /**
+     * Fills side breezemoons.
+     *
+     * @param dataModel the specified data model
+     */
+    private void fillSideBreezemoons(final Map<String, Object> dataModel) {
+        Stopwatchs.start("Fills breezemoons");
+        try {
+            final int avatarViewMode = Sessions.getAvatarViewMode();
+            final List<JSONObject> sideBreezemoons = breezemoonQueryService.getSideBreezemoons(avatarViewMode);
+
+            dataModel.put(Common.SIDE_BREEZEMOONS, sideBreezemoons);
+        } catch (final Exception e) {
+            LOGGER.log(Level.ERROR, "Fill side breezemoons failed", e);
+        } finally {
+            Stopwatchs.end();
         }
     }
 
@@ -459,12 +469,6 @@ public class DataModelService {
                 tipsLabels.add(entry.getValue());
             }
         }
-
-        // Builtin for Sym promotion
-        tipsLabels.add("<img align=\"absmiddle\" alt=\"tada\" class=\"emoji\" src=\"" + Latkes.getStaticServePath() +
-                "/emoji/graphics/tada.png\" title=\"tada\"> 本站使用 <a href=\"https://sym.b3log.org\" target=\"_blank\">Sym</a> 搭建，请为它点赞！");
-        tipsLabels.add("<img align=\"absmiddle\" alt=\"sparkles\" class=\"emoji\" src=\"" + Latkes.getStaticServePath() +
-                "/emoji/graphics/sparkles.png\" title=\"sparkles\"> 欢迎使用 <a href=\"https://sym.b3log.org\" target=\"_blank\">Sym</a> 来搭建自己的社区！");
 
         dataModel.put("tipsLabel", tipsLabels.get(RandomUtils.nextInt(tipsLabels.size())));
     }

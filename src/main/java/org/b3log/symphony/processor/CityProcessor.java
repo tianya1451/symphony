@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -25,8 +25,8 @@ import org.b3log.latke.ioc.Inject;
 import org.b3log.latke.model.Pagination;
 import org.b3log.latke.model.User;
 import org.b3log.latke.service.LangPropsService;
-import org.b3log.latke.servlet.HTTPRequestContext;
-import org.b3log.latke.servlet.HTTPRequestMethod;
+import org.b3log.latke.servlet.HttpMethod;
+import org.b3log.latke.servlet.RequestContext;
 import org.b3log.latke.servlet.annotation.After;
 import org.b3log.latke.servlet.annotation.Before;
 import org.b3log.latke.servlet.annotation.RequestProcessing;
@@ -42,12 +42,12 @@ import org.b3log.symphony.processor.advice.PermissionGrant;
 import org.b3log.symphony.processor.advice.stopwatch.StopwatchEndAdvice;
 import org.b3log.symphony.processor.advice.stopwatch.StopwatchStartAdvice;
 import org.b3log.symphony.service.*;
+import org.b3log.symphony.util.Sessions;
 import org.b3log.symphony.util.Symphonys;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -57,11 +57,12 @@ import java.util.Map;
  * City processor.
  * <ul>
  * <li>Shows city articles (/city/{city}), GET</li>
+ * <li>Show city users (/city/{city}/users), GET </li>
  * </ul>
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
  * @author <a href="http://zephyr.b3log.org">Zephyr</a>
- * @version 1.3.1.10, Aug 9, 2018
+ * @version 1.3.1.12, Jan 5, 2019
  * @since 1.3.0
  */
 @RequestProcessor
@@ -104,29 +105,22 @@ public class CityProcessor {
     private LangPropsService langService;
 
     /**
-     * Shows city articles.
+     * Show city articles.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @param city     the specified city
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = {"/city/{city}", "/city/{city}/articles"}, method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, LoginCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showCityArticles(final HTTPRequestContext context,
-                                 final HttpServletRequest request, final HttpServletResponse response, final String city) throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
+    @RequestProcessing(value = {"/city/{city}", "/city/{city}/articles"}, method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, LoginCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showCityArticles(final RequestContext context) {
+        final String city = context.pathVar("city");
+        final HttpServletRequest request = context.getRequest();
 
-        renderer.setTemplateName("city.ftl");
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "city.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
 
         dataModel.put(Common.CURRENT, "");
-
-        final int avatarViewMode = (int) request.getAttribute(UserExt.USER_AVATAR_VIEW_MODE);
 
         dataModelService.fillRandomArticles(dataModel);
         dataModelService.fillSideHotArticles(dataModel);
@@ -137,9 +131,9 @@ public class CityProcessor {
         dataModel.put(Article.ARTICLES, articles); // an empty list to avoid null check in template
         dataModel.put(Common.SELECTED, Common.CITY);
 
-        final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject user = Sessions.getUser();
         if (!UserExt.finshedGuide(user)) {
-            response.sendRedirect(Latkes.getServePath() + "/guide");
+            context.sendRedirect(Latkes.getServePath() + "/guide");
 
             return;
         }
@@ -176,7 +170,7 @@ public class CityProcessor {
 
         final JSONObject statistic = optionQueryService.getOption(queryCity + "-ArticleCount");
         if (null != statistic) {
-            articles = articleQueryService.getArticlesByCity(avatarViewMode, queryCity, pageNum, pageSize);
+            articles = articleQueryService.getArticlesByCity(queryCity, pageNum, pageSize);
             dataModel.put(Article.ARTICLES, articles);
         }
 
@@ -195,25 +189,20 @@ public class CityProcessor {
     }
 
     /**
-     * Shows city users.
+     * Show city users.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @param city     the specified city
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = {"/city/{city}/users"}, method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, LoginCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showCityUsers(final HTTPRequestContext context,
-                              final HttpServletRequest request, final HttpServletResponse response, final String city) throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
+    @RequestProcessing(value = "/city/{city}/users", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, LoginCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showCityUsers(final RequestContext context) {
+        final String city = context.pathVar("city");
+        final HttpServletRequest request = context.getRequest();
 
-        renderer.setTemplateName("city.ftl");
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "city.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
 
         dataModel.put(Common.CURRENT, "/users");
 
@@ -226,9 +215,9 @@ public class CityProcessor {
         dataModel.put(User.USERS, users);
         dataModel.put(Common.SELECTED, Common.CITY);
 
-        final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject user = Sessions.getUser();
         if (!UserExt.finshedGuide(user)) {
-            response.sendRedirect(Latkes.getServePath() + "/guide");
+            context.sendRedirect(Latkes.getServePath() + "/guide");
 
             return;
         }

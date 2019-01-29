@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -38,6 +38,7 @@ import org.b3log.latke.service.annotation.Service;
 import org.b3log.latke.util.Ids;
 import org.b3log.latke.util.URLs;
 import org.b3log.symphony.model.*;
+import org.b3log.symphony.processor.FileUploadProcessor;
 import org.b3log.symphony.processor.advice.validate.UserRegisterValidation;
 import org.b3log.symphony.repository.*;
 import org.b3log.symphony.util.Geos;
@@ -60,7 +61,7 @@ import java.util.regex.Pattern;
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
  * @author Bill Ho
- * @version 1.16.0.5, Sep 26, 2018
+ * @version 1.16.0.6, Jan 10, 2019
  * @since 0.2.0
  */
 @Service
@@ -177,9 +178,8 @@ public class UserMgmtService {
      * @param onlineFlag the specified online flag
      * @param force      the specified force flag to update
      */
+    @Transactional
     public void updateOnlineStatus(final String userId, final String ip, final boolean onlineFlag, final boolean force) {
-        Transaction transaction = null;
-
         try {
             final JSONObject user = userRepository.get(userId);
             if (null == user) {
@@ -206,21 +206,12 @@ public class UserMgmtService {
                 user.put(UserExt.USER_LATEST_LOGIN_IP, ip);
             }
 
-            transaction = userRepository.beginTransaction();
-
             user.put(UserExt.USER_ONLINE_FLAG, onlineFlag);
             user.put(UserExt.USER_LATEST_LOGIN_TIME, now);
             user.put(UserExt.USER_UPDATE_TIME, now);
-
             userRepository.update(userId, user);
-
-            transaction.commit();
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Updates user online status failed [id=" + userId + ", ip=" + ip + ", flag=" + onlineFlag + "]", e);
-
-            if (null != transaction && transaction.isActive()) {
-                transaction.rollback();
-            }
         }
     }
 
@@ -399,8 +390,8 @@ public class UserMgmtService {
             user.put(UserExt.USER_CURRENT_CHECKIN_STREAK, 0);
             user.put(UserExt.USER_POINT, 0);
             user.put(UserExt.USER_USED_POINT, 0);
-            user.put(UserExt.USER_JOIN_POINT_RANK, UserExt.USER_JOIN_POINT_RANK_C_JOIN);
-            user.put(UserExt.USER_JOIN_USED_POINT_RANK, UserExt.USER_JOIN_USED_POINT_RANK_C_JOIN);
+            user.put(UserExt.USER_JOIN_POINT_RANK, UserExt.USER_JOIN_XXX_C_JOIN);
+            user.put(UserExt.USER_JOIN_USED_POINT_RANK, UserExt.USER_JOIN_XXX_C_JOIN);
             user.put(UserExt.USER_TAGS, "");
             user.put(UserExt.USER_SKIN, Symphonys.get("skinDirName"));
             user.put(UserExt.USER_MOBILE_SKIN, Symphonys.get("mobileSkinDirName"));
@@ -432,6 +423,7 @@ public class UserMgmtService {
             user.put(UserExt.USER_KEYBOARD_SHORTCUTS_STATUS, UserExt.USER_XXX_STATUS_C_DISABLED);
             user.put(UserExt.USER_REPLY_WATCH_ARTICLE_STATUS, UserExt.USER_SUB_MAIL_STATUS_DISABLED);
             user.put(UserExt.USER_FORWARD_PAGE_STATUS, UserExt.USER_XXX_STATUS_C_ENABLED);
+            user.put(UserExt.USER_INDEX_REDIRECT_URL, "");
 
             final JSONObject optionLanguage = optionRepository.get(Option.ID_C_MISC_LANGUAGE);
             final String adminSpecifiedLang = optionLanguage.optString(Option.OPTION_VALUE);
@@ -494,8 +486,9 @@ public class UserMgmtService {
                                     null, "image/jpeg", false);
                             user.put(UserExt.USER_AVATAR_URL, Symphonys.get("qiniu.domain") + "/avatar/" + ret + "?" + new Date().getTime());
                         } else {
-                            final String fileName = UUID.randomUUID().toString().replaceAll("-", "") + ".jpg";
-                            try (final OutputStream output = new FileOutputStream(Symphonys.get("upload.dir") + fileName)) {
+                             String fileName = UUID.randomUUID().toString().replaceAll("-", "") + ".jpg";
+                             fileName = FileUploadProcessor.genFilePath(fileName);
+                            try (final OutputStream output = new FileOutputStream(FileUploadProcessor.UPLOAD_DIR + fileName)) {
                                 IOUtils.write(avatarData, output);
                             }
 
@@ -569,7 +562,7 @@ public class UserMgmtService {
                 final JSONObject u = new JSONObject();
                 u.put(User.USER_NAME, user.optString(User.USER_NAME));
                 u.put(UserExt.USER_T_NAME_LOWER_CASE, user.optString(User.USER_NAME).toLowerCase());
-                final String avatar = avatarQueryService.getAvatarURLByUser(UserExt.USER_AVATAR_VIEW_MODE_C_STATIC, user, "20");
+                final String avatar = avatarQueryService.getAvatarURLByUser(user, "20");
                 u.put(UserExt.USER_AVATAR_URL, avatar);
                 UserQueryService.USER_NAMES.add(u);
                 Collections.sort(UserQueryService.USER_NAMES, (u1, u2) -> {
@@ -786,9 +779,8 @@ public class UserMgmtService {
                         tagTitle, user.optString(User.USER_NAME));
                 tag = new JSONObject();
                 tag.put(Tag.TAG_TITLE, tagTitle);
-                String tagURI = tagTitle;
-                tagURI = URLs.encode(tagTitle);
-                tag.put(Tag.TAG_URI, tagURI);
+                final String tagURI = URLs.encode(tagTitle);
+                tag.put(Tag.TAG_URI, StringUtils.lowerCase(tagURI));
                 tag.put(Tag.TAG_CSS, "");
                 tag.put(Tag.TAG_REFERENCE_CNT, 0);
                 tag.put(Tag.TAG_COMMENT_CNT, 0);

@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -21,7 +21,6 @@ import org.apache.commons.lang.StringUtils;
 import org.b3log.latke.ioc.BeanManager;
 import org.b3log.latke.util.Strings;
 import org.b3log.symphony.cache.TagCache;
-import org.b3log.symphony.service.ShortLinkQueryService;
 import org.b3log.symphony.util.Emotions;
 import org.b3log.symphony.util.Markdowns;
 import org.b3log.symphony.util.Symphonys;
@@ -37,7 +36,7 @@ import java.util.regex.Pattern;
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
  * @author Bill Ho
  * @author <a href="http://vanessa.b3log.org">Liyuan Li</a>
- * @version 1.18.0.0, Aug 30, 2018
+ * @version 1.18.0.3, Nov 15, 2018
  * @since 0.2.0
  */
 public final class Tag {
@@ -472,24 +471,20 @@ public final class Tag {
             return u2Title.length() - u1Title.length();
         });
 
-        for (final JSONObject tag : allTags) {
-            final String tagURI = tag.optString(Tag.TAG_URI);
-            final String tagTitle = tag.optString(Tag.TAG_TITLE);
-            if (tagURI.equals(tagTitle)) {
-                continue;
-            }
-
-            if (StringUtils.equals(title, tagURI)) {
-                return tag.optString(Tag.TAG_TITLE);
-            }
-        }
-
         for (final Map.Entry<String, Set<String>> entry : NORMALIZE_MAPPINGS.entrySet()) {
             final Set<String> oddTitles = entry.getValue();
             for (final String oddTitle : oddTitles) {
                 if (StringUtils.equalsIgnoreCase(title, oddTitle)) {
                     return entry.getKey();
                 }
+            }
+        }
+
+        for (final JSONObject tag : allTags) {
+            final String tagTitle = tag.optString(Tag.TAG_TITLE);
+            final String tagURI = tag.optString(Tag.TAG_URI);
+            if (StringUtils.equalsIgnoreCase(title, tagURI) || StringUtils.equalsIgnoreCase(title, tagTitle)) {
+                return tag.optString(Tag.TAG_TITLE);
             }
         }
 
@@ -502,13 +497,13 @@ public final class Tag {
      * @param tag the specified tag
      */
     public static void fillDescription(final JSONObject tag) {
+        if (null == tag) {
+            return;
+        }
+
         String description = tag.optString(Tag.TAG_DESCRIPTION);
         String descriptionText = tag.optString(Tag.TAG_TITLE);
         if (StringUtils.isNotBlank(description)) {
-            final BeanManager beanManager = BeanManager.getInstance();
-            final ShortLinkQueryService shortLinkQueryService = beanManager.getReference(ShortLinkQueryService.class);
-
-            description = shortLinkQueryService.linkTag(description);
             description = Emotions.convert(description);
             description = Markdowns.toHTML(description);
 

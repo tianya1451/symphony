@@ -1,7 +1,7 @@
 <#--
 
     Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
-    Copyright (C) 2012-2018, b3log.org & hacpai.com
+    Copyright (C) 2012-2019, b3log.org & hacpai.com
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published by
@@ -27,7 +27,7 @@
                     <use xlink:href="#github"></use>
                 </svg>
             </a> &nbsp;
-            <a href="http://weibo.com/u/2778228501" target="_blank" class="tooltipped tooltipped-n"
+            <a href="https://weibo.com/b3log" target="_blank" class="tooltipped tooltipped-n"
                aria-label="${followWeiboLabel}">
                 <svg class="icon-weibo">
                     <use xlink:href="#weibo"></use>

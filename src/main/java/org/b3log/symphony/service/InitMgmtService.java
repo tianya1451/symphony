@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -26,7 +26,6 @@ import org.b3log.latke.logging.Logger;
 import org.b3log.latke.model.User;
 import org.b3log.latke.repository.Transaction;
 import org.b3log.latke.repository.jdbc.util.JdbcRepositories;
-import org.b3log.latke.service.ServiceException;
 import org.b3log.latke.service.annotation.Service;
 import org.b3log.latke.util.Ids;
 import org.b3log.symphony.model.*;
@@ -43,7 +42,7 @@ import java.util.Set;
  * Initialization management service.
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
- * @version 1.2.1.16, Sep 28, 2018
+ * @version 1.2.2.0, Nov 6, 2018
  * @since 1.8.0
  */
 @Service
@@ -220,10 +219,10 @@ public class InitMgmtService {
     public void initSym() {
         try {
             final List<JSONObject> admins = userQueryService.getAdmins();
-            if (null != admins && !admins.isEmpty()) { // Initialized already
+            if (null != admins && !admins.isEmpty() && 0 < optionRepository.count()) { // Initialized already
                 return;
             }
-        } catch (final ServiceException e) {
+        } catch (final Exception e) {
             LOGGER.log(Level.ERROR, "Check init failed", e);
 
             System.exit(0);
@@ -680,7 +679,7 @@ public class InitMgmtService {
             tag = tagRepository.get(tagId);
             tag.put(Tag.TAG_URI, "Pipe");
             tag.put(Tag.TAG_ICON_PATH, "pipe.png");
-            tag.put(Tag.TAG_DESCRIPTION, "[Pipe](https://github.com/b3log/pipe) 是一款小而美的开源博客平台，通过 [黑客派] 账号登录即可使用。如果你不想自己搭建，可以直接使用我们运维的 http://pipe.b3log.org");
+            tag.put(Tag.TAG_DESCRIPTION, "[Pipe](https://github.com/b3log/pipe) 是一款小而美的开源博客平台，通过社区账号登录即可使用。如果你不想自己搭建，可以直接使用我们运维的 http://pipe.b3log.org");
             tagMgmtService.updateTag(tagId, tag);
 
             tagTitle = "Wide";

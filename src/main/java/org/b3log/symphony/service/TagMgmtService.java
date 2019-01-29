@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -17,14 +17,13 @@
  */
 package org.b3log.symphony.service;
 
+import org.apache.commons.lang.StringUtils;
 import org.b3log.latke.Keys;
 import org.b3log.latke.ioc.Inject;
 import org.b3log.latke.logging.Level;
 import org.b3log.latke.logging.Logger;
 import org.b3log.latke.model.User;
-import org.b3log.latke.repository.Query;
-import org.b3log.latke.repository.RepositoryException;
-import org.b3log.latke.repository.Transaction;
+import org.b3log.latke.repository.*;
 import org.b3log.latke.repository.annotation.Transactional;
 import org.b3log.latke.service.LangPropsService;
 import org.b3log.latke.service.ServiceException;
@@ -32,10 +31,7 @@ import org.b3log.latke.service.annotation.Service;
 import org.b3log.latke.util.URLs;
 import org.b3log.symphony.cache.DomainCache;
 import org.b3log.symphony.cache.TagCache;
-import org.b3log.symphony.model.Common;
-import org.b3log.symphony.model.Option;
-import org.b3log.symphony.model.Tag;
-import org.b3log.symphony.model.UserExt;
+import org.b3log.symphony.model.*;
 import org.b3log.symphony.repository.*;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -47,7 +43,7 @@ import java.util.List;
  * Tag management service.
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
- * @version 1.3.1.6, Apr 16, 2017
+ * @version 1.3.1.8, Dec 18, 2018
  * @since 1.1.0
  */
 @Service
@@ -95,6 +91,18 @@ public class TagMgmtService {
     private DomainTagRepository domainTagRepository;
 
     /**
+     * Follow repository.
+     */
+    @Inject
+    private FollowRepository followRepository;
+
+    /**
+     * Follow management service.
+     */
+    @Inject
+    private FollowMgmtService followMgmtService;
+
+    /**
      * Language service.
      */
     @Inject
@@ -121,26 +129,40 @@ public class TagMgmtService {
 
         int removedCnt = 0;
         try {
-            final JSONArray tags = tagRepository.get(new Query()).optJSONArray(Keys.RESULTS);
+            final JSONArray tags = tagRepository.get(new Query().setFilter(new PropertyFilter(Tag.TAG_REFERENCE_CNT, FilterOperator.EQUAL, 0))).optJSONArray(Keys.RESULTS);
 
             for (int i = 0; i < tags.length(); i++) {
-                final JSONObject tag = tags.optJSONObject(i);
+                JSONObject tag = tags.optJSONObject(i);
                 final String tagId = tag.optString(Keys.OBJECT_ID);
 
-                if (0 == tag.optInt(Tag.TAG_REFERENCE_CNT) // article ref cnt
-                        && 0 == domainTagRepository.getByTagId(tagId, 1, Integer.MAX_VALUE)
-                        .optJSONArray(Keys.RESULTS).length() // domainTagRefCnt
-                ) {
-                    final JSONArray userTagRels = userTagRepository.getByTagId(tagId, 1, Integer.MAX_VALUE)
-                            .optJSONArray(Keys.RESULTS);
-                    if (1 == userTagRels.length()
-                            && Tag.TAG_TYPE_C_CREATOR == userTagRels.optJSONObject(0).optInt(Common.TYPE)) {
-                        // Just the tag's creator but not use it now
+                if (0 < tag.optInt(Tag.TAG_REFERENCE_CNT) ||
+                        0 < domainTagRepository.getByTagId(tagId, 1, Integer.MAX_VALUE).optJSONArray(Keys.RESULTS).length()) {
+                    continue;
+                }
+
+                // 优化清理未使用标签 https://github.com/b3log/symphony/issues/826
+                final JSONArray userFollowTags = followRepository.getByFollowingId(tagId, Follow.FOLLOWING_TYPE_C_TAG, 1, Integer.MAX_VALUE).optJSONArray(Keys.RESULTS);
+                for (int j = 0; j < userFollowTags.length(); j++) {
+                    final JSONObject userFollowTag = userFollowTags.optJSONObject(j);
+                    if (Follow.FOLLOWING_TYPE_C_TAG == userFollowTag.optInt(Follow.FOLLOWING_TYPE)) {
+                        final String followerId = userFollowTag.optString(Follow.FOLLOWER_ID);
+                        followMgmtService.unfollowTag(followerId, tagId);
+                    }
+                }
+
+                final JSONArray userTagRels = userTagRepository.getByTagId(tagId, 1, Integer.MAX_VALUE).optJSONArray(Keys.RESULTS);
+                if (1 == userTagRels.length() && Tag.TAG_TYPE_C_CREATOR == userTagRels.optJSONObject(0).optInt(Common.TYPE)) {
+                    final String tagTitle = tag.optString(Tag.TAG_TITLE);
+
+                    if (StringUtils.isBlank(tag.optString(Tag.TAG_ICON_PATH)) && StringUtils.isBlank(tag.optString(Tag.TAG_DESCRIPTION))) {
                         tagRepository.remove(tagId);
                         removedCnt++;
 
-                        LOGGER.info("Removed a unused tag [title=" + tag.optString(Tag.TAG_TITLE) + "]");
+                        LOGGER.info("Removed a unused tag [title=" + tagTitle + "]");
+                    } else {
+                        LOGGER.info("Found a unused tag [title=" + tagTitle + "], but it has description or icon so do not remove it");
                     }
+
                 }
             }
 
@@ -180,9 +202,8 @@ public class TagMgmtService {
 
             JSONObject tag = new JSONObject();
             tag.put(Tag.TAG_TITLE, tagTitle);
-            String tagURI = tagTitle;
-            tagURI = URLs.encode(tagTitle);
-            tag.put(Tag.TAG_URI, tagURI);
+            final String tagURI = URLs.encode(tagTitle);
+            tag.put(Tag.TAG_URI, StringUtils.lowerCase(tagURI));
             tag.put(Tag.TAG_CSS, "");
             tag.put(Tag.TAG_REFERENCE_CNT, 0);
             tag.put(Tag.TAG_COMMENT_CNT, 0);

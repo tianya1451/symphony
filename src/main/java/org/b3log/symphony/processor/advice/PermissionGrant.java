@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -22,14 +22,14 @@ import org.b3log.latke.ioc.Singleton;
 import org.b3log.latke.logging.Logger;
 import org.b3log.latke.model.User;
 import org.b3log.latke.service.LangPropsService;
-import org.b3log.latke.servlet.HTTPRequestContext;
-import org.b3log.latke.servlet.advice.AfterRequestProcessAdvice;
-import org.b3log.latke.servlet.renderer.AbstractHTTPResponseRenderer;
+import org.b3log.latke.servlet.RequestContext;
+import org.b3log.latke.servlet.advice.ProcessAdvice;
+import org.b3log.latke.servlet.renderer.AbstractResponseRenderer;
 import org.b3log.latke.util.Stopwatchs;
-import org.b3log.symphony.model.Common;
 import org.b3log.symphony.model.Permission;
 import org.b3log.symphony.model.Role;
 import org.b3log.symphony.service.RoleQueryService;
+import org.b3log.symphony.util.Sessions;
 import org.json.JSONObject;
 
 import java.util.Map;
@@ -42,7 +42,7 @@ import java.util.Map;
  * @since 1.8.0
  */
 @Singleton
-public class PermissionGrant extends AfterRequestProcessAdvice {
+public class PermissionGrant extends ProcessAdvice {
 
     /**
      * Logger.
@@ -61,8 +61,8 @@ public class PermissionGrant extends AfterRequestProcessAdvice {
     private LangPropsService langPropsService;
 
     @Override
-    public void doAdvice(final HTTPRequestContext context, final Object ret) {
-        final AbstractHTTPResponseRenderer renderer = context.getRenderer();
+    public void doAdvice(final RequestContext context) {
+        final AbstractResponseRenderer renderer = context.getRenderer();
         if (null == renderer) {
             return;
         }
@@ -71,7 +71,7 @@ public class PermissionGrant extends AfterRequestProcessAdvice {
         try {
             final Map<String, Object> dataModel = context.getRenderer().getRenderDataModel();
 
-            final JSONObject user = (JSONObject) dataModel.get(Common.CURRENT_USER);
+            final JSONObject user = Sessions.getUser();
             final String roleId = null != user ? user.optString(User.USER_ROLE) : Role.ROLE_ID_C_VISITOR;
             final Map<String, JSONObject> permissionsGrant = roleQueryService.getPermissionsGrantMap(roleId);
             dataModel.put(Permission.PERMISSIONS, permissionsGrant);

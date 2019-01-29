@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -46,7 +46,7 @@ public class ReferralRepository extends AbstractRepository {
         final Query query = new Query().setFilter(CompositeFilterOperator.and(
                 new PropertyFilter(Referral.REFERRAL_DATA_ID, FilterOperator.EQUAL, dataId),
                 new PropertyFilter(Referral.REFERRAL_IP, FilterOperator.EQUAL, ip)
-        )).setPageCount(1).setPageSize(1).setCurrentPageNum(1);
+        )).setPageCount(1).setPage(1, 1);
 
         final JSONArray records = get(query).optJSONArray(Keys.RESULTS);
         if (records.length() < 1) {

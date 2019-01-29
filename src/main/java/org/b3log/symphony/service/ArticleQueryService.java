@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -32,6 +32,7 @@ import org.b3log.latke.repository.*;
 import org.b3log.latke.service.LangPropsService;
 import org.b3log.latke.service.ServiceException;
 import org.b3log.latke.service.annotation.Service;
+import org.b3log.latke.servlet.RequestContext;
 import org.b3log.latke.util.*;
 import org.b3log.symphony.cache.ArticleCache;
 import org.b3log.symphony.model.*;
@@ -40,7 +41,6 @@ import org.b3log.symphony.processor.channel.ArticleChannel;
 import org.b3log.symphony.repository.*;
 import org.b3log.symphony.util.*;
 import org.json.JSONArray;
-import org.json.JSONException;
 import org.json.JSONObject;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -48,18 +48,18 @@ import org.jsoup.nodes.Element;
 import org.jsoup.parser.Parser;
 import org.jsoup.safety.Whitelist;
 import org.jsoup.select.Elements;
-import org.owasp.encoder.Encode;
 
-import javax.servlet.http.HttpServletRequest;
 import java.text.DecimalFormat;
 import java.util.*;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Article query service.
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
  * @author <a href="http://vanessa.b3log.org">Liyuan Li</a>
- * @version 2.28.0.6, Sep 28, 2018
+ * @version 2.28.0.9, Dec 17, 2018
  * @since 0.2.0
  */
 @Service
@@ -69,11 +69,6 @@ public class ArticleQueryService {
      * Logger.
      */
     private static final Logger LOGGER = Logger.getLogger(ArticleQueryService.class);
-
-    /**
-     * Count to fetch article tags for relevant articles.
-     */
-    private static final int RELEVANT_ARTICLE_RANDOM_FETCH_TAG_CNT = 3;
 
     /**
      * Article repository.
@@ -168,7 +163,6 @@ public class ArticleQueryService {
     /**
      * Gets the question articles with the specified fetch size.
      *
-     * @param avatarViewMode the specified avatar view mode
      * @param sortMode       the specified sort mode, 0: default, 1: unanswered, 2: reward, 3: hot
      * @param currentPageNum the specified current page number
      * @param fetchSize      the specified fetch size
@@ -186,25 +180,22 @@ public class ArticleQueryService {
      *      }, ....]
      * }
      * </pre>
-     * @throws ServiceException service exception
      */
-    public JSONObject getQuestionArticles(final int avatarViewMode, final int sortMode, final int currentPageNum, final int fetchSize)
-            throws ServiceException {
+    public JSONObject getQuestionArticles(final int sortMode, final int currentPageNum, final int fetchSize) {
         final JSONObject ret = new JSONObject();
 
         Query query;
         switch (sortMode) {
             case 0:
-                query = new Query().
-                        addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                        setPageSize(fetchSize).setCurrentPageNum(currentPageNum).
+                query = new Query().addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
+                        setPage(currentPageNum, fetchSize).
                         setFilter(makeQuestionArticleShowingFilter());
 
                 break;
             case 1:
                 query = new Query().
                         addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                        setPageSize(fetchSize).setCurrentPageNum(currentPageNum);
+                        setPage(currentPageNum, fetchSize);
                 final CompositeFilter compositeFilter1 = makeQuestionArticleShowingFilter();
                 final List<Filter> filters1 = new ArrayList<>();
                 filters1.add(new PropertyFilter(Article.ARTICLE_COMMENT_CNT, FilterOperator.EQUAL, 0));
@@ -217,7 +208,7 @@ public class ArticleQueryService {
                 query = new Query().
                         addSort(Article.ARTICLE_QNA_OFFER_POINT, SortDirection.DESCENDING).
                         addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                        setPageSize(fetchSize).setCurrentPageNum(currentPageNum);
+                        setPage(currentPageNum, fetchSize);
                 final CompositeFilter compositeFilter2 = makeQuestionArticleShowingFilter();
                 final List<Filter> filters2 = new ArrayList<>();
                 filters2.add(new PropertyFilter(Keys.OBJECT_ID, FilterOperator.GREATER_THAN_OR_EQUAL, id));
@@ -229,14 +220,14 @@ public class ArticleQueryService {
                 query = new Query().
                         addSort(Article.REDDIT_SCORE, SortDirection.DESCENDING).
                         addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                        setPageSize(fetchSize).setCurrentPageNum(currentPageNum).
+                        setPage(currentPageNum, fetchSize).
                         setFilter(makeQuestionArticleShowingFilter());
 
                 break;
             default:
                 query = new Query().
                         addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                        setPageSize(fetchSize).setCurrentPageNum(currentPageNum).
+                        setPage(currentPageNum, fetchSize).
                         setFilter(makeQuestionArticleShowingFilter());
         }
 
@@ -248,7 +239,7 @@ public class ArticleQueryService {
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets articles failed", e);
 
-            throw new ServiceException(e);
+            return null;
         } finally {
             Stopwatchs.end();
         }
@@ -266,19 +257,11 @@ public class ArticleQueryService {
 
         final JSONArray data = result.optJSONArray(Keys.RESULTS);
         final List<JSONObject> articles = CollectionUtils.jsonArrayToList(data);
-
-        try {
-            organizeArticles(avatarViewMode, articles);
-
-            for (final JSONObject article : articles) {
-                final String articleAuthorId = article.optString(Article.ARTICLE_AUTHOR_ID);
-                final String articleId = article.optString(Keys.OBJECT_ID);
-                article.put(Common.OFFERED, rewardQueryService.isRewarded(articleAuthorId, articleId, Reward.TYPE_C_ACCEPT_COMMENT));
-            }
-        } catch (final RepositoryException e) {
-            LOGGER.log(Level.ERROR, "Organizes articles failed", e);
-
-            throw new ServiceException(e);
+        organizeArticles(articles);
+        for (final JSONObject article : articles) {
+            final String articleAuthorId = article.optString(Article.ARTICLE_AUTHOR_ID);
+            final String articleId = article.optString(Keys.OBJECT_ID);
+            article.put(Common.OFFERED, rewardQueryService.isRewarded(articleAuthorId, articleId, Reward.TYPE_C_ACCEPT_COMMENT));
         }
 
         //final Integer participantsCnt = Symphonys.getInt("latestArticleParticipantsCnt");
@@ -291,24 +274,18 @@ public class ArticleQueryService {
     /**
      * Gets following user articles.
      *
-     * @param avatarViewMode the specified avatar view mode
      * @param userId         the specified user id
      * @param currentPageNum the specified page number
      * @param pageSize       the specified page size
      * @return following tag articles, returns an empty list if not found
-     * @throws ServiceException service exception
      */
-    public List<JSONObject> getFollowingUserArticles(final int avatarViewMode, final String userId,
-                                                     final int currentPageNum, final int pageSize) throws ServiceException {
-        final List<JSONObject> users = (List<JSONObject>) followQueryService.getFollowingUsers(
-                avatarViewMode, userId, 1, Integer.MAX_VALUE).opt(Keys.RESULTS);
+    public List<JSONObject> getFollowingUserArticles(final String userId, final int currentPageNum, final int pageSize) {
+        final List<JSONObject> users = (List<JSONObject>) followQueryService.getFollowingUsers(userId, 1, Integer.MAX_VALUE).opt(Keys.RESULTS);
         if (users.isEmpty()) {
             return Collections.emptyList();
         }
 
-        final Query query = new Query()
-                .addSort(Keys.OBJECT_ID, SortDirection.DESCENDING)
-                .setPageSize(pageSize).setCurrentPageNum(currentPageNum);
+        final Query query = new Query().addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).setPage(currentPageNum, pageSize);
 
         final List<String> followingUserIds = new ArrayList<>();
         for (final JSONObject user : users) {
@@ -330,21 +307,14 @@ public class ArticleQueryService {
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets following user articles failed", e);
 
-            throw new ServiceException(e);
+            return Collections.emptyList();
         } finally {
             Stopwatchs.end();
         }
 
         final JSONArray data = result.optJSONArray(Keys.RESULTS);
         final List<JSONObject> ret = CollectionUtils.jsonArrayToList(data);
-
-        try {
-            organizeArticles(avatarViewMode, ret);
-        } catch (final RepositoryException e) {
-            LOGGER.log(Level.ERROR, "Organizes articles failed", e);
-
-            throw new ServiceException(e);
-        }
+        organizeArticles(ret);
 
         return ret;
     }
@@ -352,15 +322,12 @@ public class ArticleQueryService {
     /**
      * Gets following tag articles.
      *
-     * @param avatarViewMode the specified avatar view mode
      * @param userId         the specified user id
      * @param currentPageNum the specified page number
      * @param pageSize       the specified page size
      * @return following tag articles, returns an empty list if not found
-     * @throws ServiceException service exception
      */
-    public List<JSONObject> getFollowingTagArticles(final int avatarViewMode, final String userId,
-                                                    final int currentPageNum, final int pageSize) throws ServiceException {
+    public List<JSONObject> getFollowingTagArticles(final String userId, final int currentPageNum, final int pageSize) {
         final List<JSONObject> tags = (List<JSONObject>) followQueryService.getFollowingTags(
                 userId, 1, Integer.MAX_VALUE).opt(Keys.RESULTS);
         if (tags.isEmpty()) {
@@ -387,7 +354,7 @@ public class ArticleQueryService {
         articleFields.put(Article.ARTICLE_CONTENT, String.class);
         articleFields.put(Article.ARTICLE_QNA_OFFER_POINT, Integer.class);
 
-        return getArticlesByTags(avatarViewMode, currentPageNum, pageSize, articleFields, tags.toArray(new JSONObject[0]));
+        return getArticlesByTags(currentPageNum, pageSize, articleFields, tags.toArray(new JSONObject[0]));
     }
 
     /**
@@ -410,9 +377,8 @@ public class ArticleQueryService {
             final Query query = new Query().setFilter(
                     new PropertyFilter(Keys.OBJECT_ID, FilterOperator.GREATER_THAN, articleId)).
                     addSort(Keys.OBJECT_ID, SortDirection.ASCENDING).
-                    addProjection(Article.ARTICLE_PERMALINK, String.class).
-                    addProjection(Article.ARTICLE_TITLE, String.class).
-                    setCurrentPageNum(1).setPageCount(1).setPageSize(1);
+                    select(Article.ARTICLE_PERMALINK, Article.ARTICLE_TITLE).
+                    setPage(1, 1).setPageCount(1);
 
             final JSONArray result = articleRepository.get(query).optJSONArray(Keys.RESULTS);
             if (0 == result.length()) {
@@ -424,7 +390,7 @@ public class ArticleQueryService {
                 return null;
             }
 
-            final String title = Encode.forHtml(ret.optString(Article.ARTICLE_TITLE));
+            final String title = Escapes.escapeHTML(ret.optString(Article.ARTICLE_TITLE));
             ret.put(Article.ARTICLE_T_TITLE_EMOJI, Emotions.convert(title));
             ret.put(Article.ARTICLE_T_TITLE_EMOJI_UNICODE, EmojiParser.parseToUnicode(title));
 
@@ -458,9 +424,8 @@ public class ArticleQueryService {
             final Query query = new Query().setFilter(
                     new PropertyFilter(Keys.OBJECT_ID, FilterOperator.LESS_THAN, articleId)).
                     addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                    addProjection(Article.ARTICLE_PERMALINK, String.class).
-                    addProjection(Article.ARTICLE_TITLE, String.class).
-                    setCurrentPageNum(1).setPageCount(1).setPageSize(1);
+                    select(Article.ARTICLE_PERMALINK, Article.ARTICLE_TITLE).
+                    setPage(1, 1).setPageCount(1);
 
             final JSONArray result = articleRepository.get(query).optJSONArray(Keys.RESULTS);
             if (0 == result.length()) {
@@ -472,7 +437,7 @@ public class ArticleQueryService {
                 return null;
             }
 
-            final String title = Encode.forHtml(ret.optString(Article.ARTICLE_TITLE));
+            final String title = Escapes.escapeHTML(ret.optString(Article.ARTICLE_TITLE));
             ret.put(Article.ARTICLE_T_TITLE_EMOJI, Emotions.convert(title));
             ret.put(Article.ARTICLE_T_TITLE_EMOJI_UNICODE, EmojiParser.parseToUnicode(title));
 
@@ -565,8 +530,8 @@ public class ArticleQueryService {
      */
     public List<JSONObject> getValidArticles(final int currentPageNum, final int pageSize, final int... types) throws ServiceException {
         try {
-            final Query query = new Query().addSort(Keys.OBJECT_ID, SortDirection.DESCENDING)
-                    .setPageCount(1).setPageSize(pageSize).setCurrentPageNum(currentPageNum);
+            final Query query = new Query().addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).setPageCount(1).
+                    setPage(currentPageNum, pageSize);
 
             if (null != types && types.length > 0) {
                 final List<Filter> typeFilters = new ArrayList<>();
@@ -599,15 +564,12 @@ public class ArticleQueryService {
     /**
      * Gets domain articles.
      *
-     * @param avatarViewMode the specified avatar view mode
      * @param domainId       the specified domain id
      * @param currentPageNum the specified current page number
      * @param pageSize       the specified page size
      * @return result
-     * @throws ServiceException service exception
      */
-    public JSONObject getDomainArticles(final int avatarViewMode, final String domainId,
-                                        final int currentPageNum, final int pageSize) throws ServiceException {
+    public JSONObject getDomainArticles(final String domainId, final int currentPageNum, final int pageSize) {
         final JSONObject ret = new JSONObject();
         ret.put(Article.ARTICLES, (Object) Collections.emptyList());
 
@@ -631,7 +593,7 @@ public class ArticleQueryService {
 
             Query query = new Query().setFilter(
                     new PropertyFilter(Tag.TAG + "_" + Keys.OBJECT_ID, FilterOperator.IN, tagIds)).
-                    setCurrentPageNum(currentPageNum).setPageSize(pageSize).
+                    setPage(currentPageNum, pageSize).
                     addSort(Keys.OBJECT_ID, SortDirection.DESCENDING);
             JSONObject result = tagArticleRepository.get(query);
             final JSONArray tagArticles = result.optJSONArray(Keys.RESULTS);
@@ -657,27 +619,19 @@ public class ArticleQueryService {
                     new PropertyFilter(Article.ARTICLE_STATUS, FilterOperator.NOT_EQUAL, Article.ARTICLE_STATUS_C_INVALID))).
                     setPageCount(1).addSort(Keys.OBJECT_ID, SortDirection.DESCENDING);
 
-            final List<JSONObject> articles
-                    = CollectionUtils.jsonArrayToList(articleRepository.get(query).optJSONArray(Keys.RESULTS));
-
-            try {
-                organizeArticles(avatarViewMode, articles);
-            } catch (final RepositoryException e) {
-                LOGGER.log(Level.ERROR, "Organizes articles failed", e);
-
-                throw new ServiceException(e);
-            }
+            final List<JSONObject> articles = CollectionUtils.jsonArrayToList(articleRepository.get(query).optJSONArray(Keys.RESULTS));
+            organizeArticles(articles);
 
             final Integer participantsCnt = Symphonys.getInt("latestArticleParticipantsCnt");
-            genParticipants(avatarViewMode, articles, participantsCnt);
+            genParticipants(articles, participantsCnt);
 
             ret.put(Article.ARTICLES, (Object) articles);
 
             return ret;
-        } catch (final RepositoryException | ServiceException e) {
+        } catch (final Exception e) {
             LOGGER.log(Level.ERROR, "Gets domain articles error", e);
 
-            throw new ServiceException(e);
+            return null;
         }
     }
 
@@ -687,12 +641,11 @@ public class ArticleQueryService {
      * The relevant articles exist the same tag with the specified article.
      * </p>
      *
-     * @param avatarViewMode the specified avatar view mode
-     * @param article        the specified article
-     * @param fetchSize      the specified fetch size
+     * @param article   the specified article
+     * @param fetchSize the specified fetch size
      * @return relevant articles, returns an empty list if not found
      */
-    public List<JSONObject> getRelevantArticles(final int avatarViewMode, final JSONObject article, final int fetchSize) {
+    public List<JSONObject> getRelevantArticles(final JSONObject article, final int fetchSize) {
         final String tagsString = article.optString(Article.ARTICLE_TAGS);
         String[] tagTitles = tagsString.split(",");
         final List<String> excludedB3logTitles = new ArrayList<>();
@@ -705,29 +658,24 @@ public class ArticleQueryService {
             excludedB3logTitles.add("B3log");
         }
         tagTitles = excludedB3logTitles.toArray(new String[0]);
-        final int tagTitlesLength = tagTitles.length;
-        final int subCnt = tagTitlesLength > RELEVANT_ARTICLE_RANDOM_FETCH_TAG_CNT
-                ? RELEVANT_ARTICLE_RANDOM_FETCH_TAG_CNT : tagTitlesLength;
-
-        final List<Integer> tagIdx = CollectionUtils.getRandomIntegers(0, tagTitlesLength, subCnt);
-        final int subFetchSize = fetchSize / subCnt;
         final Set<String> fetchedArticleIds = new HashSet<>();
-
-        final List<JSONObject> ret = new ArrayList<>();
         try {
-            for (int i = 0; i < tagIdx.size(); i++) {
-                final String tagTitle = tagTitles[tagIdx.get(i)].trim();
-
+            List<JSONObject> ret = new ArrayList<>();
+            final List<JSONObject> tags = new ArrayList<>();
+            for (int i = 0; i < tagTitles.length; i++) {
+                final String tagTitle = tagTitles[i];
                 final JSONObject tag = tagRepository.getByTitle(tagTitle);
+                tags.add(tag);
+            }
+            Collections.sort(tags, Comparator.comparingInt(t -> t.optInt(Tag.TAG_REFERENCE_CNT)));
+
+            for (final JSONObject tag : tags) {
                 final String tagId = tag.optString(Keys.OBJECT_ID);
-                JSONObject result = tagArticleRepository.getByTagId(tagId, 1, subFetchSize);
-
+                JSONObject result = tagArticleRepository.getByTagId(tagId, 1, fetchSize);
                 final JSONArray tagArticleRelations = result.optJSONArray(Keys.RESULTS);
-
                 final Set<String> articleIds = new HashSet<>();
                 for (int j = 0; j < tagArticleRelations.length(); j++) {
                     final String articleId = tagArticleRelations.optJSONObject(j).optString(Article.ARTICLE + '_' + Keys.OBJECT_ID);
-
                     if (fetchedArticleIds.contains(articleId)) {
                         continue;
                     }
@@ -739,15 +687,17 @@ public class ArticleQueryService {
                 articleIds.remove(article.optString(Keys.OBJECT_ID));
 
                 final Query query = new Query().setFilter(new PropertyFilter(Keys.OBJECT_ID, FilterOperator.IN, articleIds)).
-                        addProjection(Article.ARTICLE_TITLE, String.class).
-                        addProjection(Article.ARTICLE_PERMALINK, String.class).
-                        addProjection(Article.ARTICLE_AUTHOR_ID, String.class);
-                result = articleRepository.get(query);
-
-                ret.addAll(CollectionUtils.jsonArrayToList(result.optJSONArray(Keys.RESULTS)));
+                        select(Article.ARTICLE_TITLE, Article.ARTICLE_PERMALINK, Article.ARTICLE_AUTHOR_ID);
+                ret.addAll(articleRepository.getList(query));
+                if (ret.size() >= fetchSize) {
+                    break;
+                }
             }
 
-            organizeArticles(avatarViewMode, ret);
+            final int size = ret.size() > fetchSize ? fetchSize : ret.size();
+            ret = ret.subList(0, size);
+
+            organizeArticles(ret);
 
             return ret;
         } catch (final Exception e) {
@@ -788,9 +738,7 @@ public class ArticleQueryService {
             final List<JSONObject> ret = new ArrayList<>();
 
             if (!tagList.isEmpty()) {
-                final List<JSONObject> tagArticles
-                        = getArticlesByTags(UserExt.USER_AVATAR_VIEW_MODE_C_STATIC,
-                        currentPageNum, pageSize, articleFields, tagList.toArray(new JSONObject[0]));
+                final List<JSONObject> tagArticles = getArticlesByTags(currentPageNum, pageSize, articleFields, tagList.toArray(new JSONObject[0]));
 
                 ret.addAll(tagArticles);
             }
@@ -800,11 +748,11 @@ public class ArticleQueryService {
                 filters.add(new PropertyFilter(Article.ARTICLE_STATUS, FilterOperator.NOT_EQUAL, Article.ARTICLE_STATUS_C_INVALID));
                 filters.add(new PropertyFilter(Article.ARTICLE_TYPE, FilterOperator.NOT_EQUAL, Article.ARTICLE_TYPE_C_DISCUSSION));
 
-                final Query query = new Query().addSort(Keys.OBJECT_ID, SortDirection.DESCENDING)
-                        .setPageCount(currentPageNum).setPageSize(pageSize).setCurrentPageNum(1);
+                final Query query = new Query().addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).setPageCount(currentPageNum).
+                        setPage(1, pageSize);
                 query.setFilter(new CompositeFilter(CompositeFilterOperator.AND, filters));
                 for (final Map.Entry<String, Class<?>> articleField : articleFields.entrySet()) {
-                    query.addProjection(articleField.getKey(), articleField.getValue());
+                    query.select(articleField.getKey());
                 }
 
                 final JSONObject result = articleRepository.get(query);
@@ -840,7 +788,7 @@ public class ArticleQueryService {
                 article.remove(Article.ARTICLE_T_AUTHOR_THUMBNAIL_URL + "210");
                 article.remove(Article.ARTICLE_T_STICK_REMAINS);
 
-                long createTime = 0;
+                long createTime;
                 final Object time = article.get(Article.ARTICLE_CREATE_TIME);
                 if (time instanceof Date) {
                     createTime = ((Date) time).getTime();
@@ -856,38 +804,8 @@ public class ArticleQueryService {
             }
 
             return ret;
-        } catch (final RepositoryException | ServiceException | JSONException e) {
+        } catch (final Exception e) {
             LOGGER.log(Level.ERROR, "Gets interests failed", e);
-            throw new ServiceException(e);
-        }
-    }
-
-    /**
-     * Gets news (perfect articles).
-     *
-     * @param currentPageNum the specified page number
-     * @param pageSize       the specified page size
-     * @return articles, return an empty list if not found
-     * @throws ServiceException service exception
-     */
-    public List<JSONObject> getNews(final int currentPageNum, final int pageSize) throws ServiceException {
-        try {
-            final Query query = new Query().
-                    setFilter(new PropertyFilter(Article.ARTICLE_PERFECT, FilterOperator.EQUAL, Article.ARTICLE_PERFECT_C_PERFECT)).
-                    addProjection(Article.ARTICLE_TITLE, String.class).
-                    addProjection(Article.ARTICLE_PERMALINK, String.class).
-                    addProjection(Article.ARTICLE_CREATE_TIME, Long.class).
-                    addSort(Article.ARTICLE_CREATE_TIME, SortDirection.DESCENDING);
-            final JSONObject result = articleRepository.get(query);
-
-            final List<JSONObject> ret = CollectionUtils.jsonArrayToList(result.optJSONArray(Keys.RESULTS));
-            for (final JSONObject article : ret) {
-                article.put(Article.ARTICLE_PERMALINK, Latkes.getServePath() + article.optString(Article.ARTICLE_PERMALINK));
-            }
-
-            return ret;
-        } catch (final RepositoryException e) {
-            LOGGER.log(Level.ERROR, "Gets news failed", e);
             throw new ServiceException(e);
         }
     }
@@ -895,16 +813,14 @@ public class ArticleQueryService {
     /**
      * Gets articles by the specified tags (order by article create date desc).
      *
-     * @param avatarViewMode the specified avatar view mode
      * @param tags           the specified tags
      * @param currentPageNum the specified page number
      * @param articleFields  the specified article fields to return
      * @param pageSize       the specified page size
      * @return articles, return an empty list if not found
-     * @throws ServiceException service exception
      */
-    public List<JSONObject> getArticlesByTags(final int avatarViewMode, final int currentPageNum, final int pageSize,
-                                              final Map<String, Class<?>> articleFields, final JSONObject... tags) throws ServiceException {
+    public List<JSONObject> getArticlesByTags(final int currentPageNum, final int pageSize,
+                                              final Map<String, Class<?>> articleFields, final JSONObject... tags) {
         try {
             final List<Filter> filters = new ArrayList<>();
             for (final JSONObject tag : tags) {
@@ -920,7 +836,7 @@ public class ArticleQueryService {
 
             // XXX: 这里的分页是有问题的，后面取文章的时候会少（因为一篇文章可以有多个标签，但是文章 id 一样）
             Query query = new Query().addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                    setFilter(filter).setPageCount(1).setPageSize(pageSize).setCurrentPageNum(currentPageNum);
+                    setFilter(filter).setPageCount(1).setPage(currentPageNum, pageSize);
 
             JSONObject result = tagArticleRepository.get(query);
             final JSONArray tagArticleRelations = result.optJSONArray(Keys.RESULTS);
@@ -933,109 +849,104 @@ public class ArticleQueryService {
             query = new Query().setFilter(new PropertyFilter(Keys.OBJECT_ID, FilterOperator.IN, articleIds)).
                     addSort(Keys.OBJECT_ID, SortDirection.DESCENDING);
             for (final Map.Entry<String, Class<?>> articleField : articleFields.entrySet()) {
-                query.addProjection(articleField.getKey(), articleField.getValue());
+                query.select(articleField.getKey());
             }
 
             result = articleRepository.get(query);
 
             final List<JSONObject> ret = CollectionUtils.jsonArrayToList(result.optJSONArray(Keys.RESULTS));
-            organizeArticles(avatarViewMode, ret);
+            organizeArticles(ret);
 
             return ret;
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets articles by tags [tagLength=" + tags.length + "] failed", e);
-            throw new ServiceException(e);
+
+            return Collections.emptyList();
         }
     }
 
     /**
      * Gets articles by the specified city (order by article create date desc).
      *
-     * @param avatarViewMode the specified avatar view mode
      * @param city           the specified city
      * @param currentPageNum the specified page number
      * @param pageSize       the specified page size
      * @return articles, return an empty list if not found
-     * @throws ServiceException service exception
      */
-    public List<JSONObject> getArticlesByCity(final int avatarViewMode, final String city,
-                                              final int currentPageNum, final int pageSize) throws ServiceException {
+    public List<JSONObject> getArticlesByCity(final String city, final int currentPageNum, final int pageSize) {
         try {
             final Query query = new Query().addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                    setFilter(new PropertyFilter(Article.ARTICLE_CITY, FilterOperator.EQUAL, city))
-                    .setPageCount(1).setPageSize(pageSize).setCurrentPageNum(currentPageNum);
+                    setFilter(new PropertyFilter(Article.ARTICLE_CITY, FilterOperator.EQUAL, city)).
+                    setPageCount(1).setPage(currentPageNum, pageSize);
 
             final JSONObject result = articleRepository.get(query);
 
             final List<JSONObject> ret = CollectionUtils.jsonArrayToList(result.optJSONArray(Keys.RESULTS));
-            organizeArticles(avatarViewMode, ret);
+            organizeArticles(ret);
 
             final Integer participantsCnt = Symphonys.getInt("cityArticleParticipantsCnt");
-            genParticipants(avatarViewMode, ret, participantsCnt);
+            genParticipants(ret, participantsCnt);
 
             return ret;
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets articles by city [" + city + "] failed", e);
 
-            throw new ServiceException(e);
+            return Collections.emptyList();
         }
     }
 
     /**
      * Gets articles by the specified tag (order by article create date desc).
      *
-     * @param avatarViewMode the specified avatar view mode
      * @param sortMode       the specified sort mode, 0: default, 1: hot, 2: score, 3: reply, 4: perfect
      * @param tag            the specified tag
      * @param currentPageNum the specified page number
      * @param pageSize       the specified page size
      * @return articles, return an empty list if not found
-     * @throws ServiceException service exception
      */
-    public List<JSONObject> getArticlesByTag(final int avatarViewMode, final int sortMode, final JSONObject tag,
-                                             final int currentPageNum, final int pageSize) throws ServiceException {
+    public List<JSONObject> getArticlesByTag(final int sortMode, final JSONObject tag, final int currentPageNum, final int pageSize) {
         try {
             Query query = new Query();
             switch (sortMode) {
                 case 0:
                     query.addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                            setFilter(new PropertyFilter(Tag.TAG + '_' + Keys.OBJECT_ID, FilterOperator.EQUAL, tag.optString(Keys.OBJECT_ID)))
-                            .setPageCount(1).setPageSize(pageSize).setCurrentPageNum(currentPageNum);
+                            setFilter(new PropertyFilter(Tag.TAG + '_' + Keys.OBJECT_ID, FilterOperator.EQUAL, tag.optString(Keys.OBJECT_ID))).
+                            setPageCount(1).setPage(currentPageNum, pageSize);
 
                     break;
                 case 1:
                     query.addSort(Article.ARTICLE_COMMENT_CNT, SortDirection.DESCENDING).
                             addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                            setFilter(new PropertyFilter(Tag.TAG + '_' + Keys.OBJECT_ID, FilterOperator.EQUAL, tag.optString(Keys.OBJECT_ID)))
-                            .setPageCount(1).setPageSize(pageSize).setCurrentPageNum(currentPageNum);
+                            setFilter(new PropertyFilter(Tag.TAG + '_' + Keys.OBJECT_ID, FilterOperator.EQUAL, tag.optString(Keys.OBJECT_ID))).
+                            setPageCount(1).setPage(currentPageNum, pageSize);
 
                     break;
                 case 2:
                     query.addSort(Article.REDDIT_SCORE, SortDirection.DESCENDING).
                             addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                            setFilter(new PropertyFilter(Tag.TAG + '_' + Keys.OBJECT_ID, FilterOperator.EQUAL, tag.optString(Keys.OBJECT_ID)))
-                            .setPageCount(1).setPageSize(pageSize).setCurrentPageNum(currentPageNum);
+                            setFilter(new PropertyFilter(Tag.TAG + '_' + Keys.OBJECT_ID, FilterOperator.EQUAL, tag.optString(Keys.OBJECT_ID))).
+                            setPageCount(1).setPage(currentPageNum, pageSize);
 
                     break;
                 case 3:
                     query.addSort(Article.ARTICLE_LATEST_CMT_TIME, SortDirection.DESCENDING).
                             addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                            setFilter(new PropertyFilter(Tag.TAG + '_' + Keys.OBJECT_ID, FilterOperator.EQUAL, tag.optString(Keys.OBJECT_ID)))
-                            .setPageCount(1).setPageSize(pageSize).setCurrentPageNum(currentPageNum);
+                            setFilter(new PropertyFilter(Tag.TAG + '_' + Keys.OBJECT_ID, FilterOperator.EQUAL, tag.optString(Keys.OBJECT_ID))).
+                            setPageCount(1).setPage(currentPageNum, pageSize);
 
                     break;
                 case 4:
                     query.addSort(Article.ARTICLE_PERFECT, SortDirection.DESCENDING).
                             addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                            setFilter(new PropertyFilter(Tag.TAG + '_' + Keys.OBJECT_ID, FilterOperator.EQUAL, tag.optString(Keys.OBJECT_ID)))
-                            .setPageCount(1).setPageSize(pageSize).setCurrentPageNum(currentPageNum);
+                            setFilter(new PropertyFilter(Tag.TAG + '_' + Keys.OBJECT_ID, FilterOperator.EQUAL, tag.optString(Keys.OBJECT_ID))).
+                            setPageCount(1).setPage(currentPageNum, pageSize);
 
                     break;
                 default:
                     LOGGER.warn("Unknown sort mode [" + sortMode + "]");
                     query.addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                            setFilter(new PropertyFilter(Tag.TAG + '_' + Keys.OBJECT_ID, FilterOperator.EQUAL, tag.optString(Keys.OBJECT_ID)))
-                            .setPageCount(1).setPageSize(pageSize).setCurrentPageNum(currentPageNum);
+                            setFilter(new PropertyFilter(Tag.TAG + '_' + Keys.OBJECT_ID, FilterOperator.EQUAL, tag.optString(Keys.OBJECT_ID))).
+                            setPageCount(1).setPage(currentPageNum, pageSize);
             }
 
             JSONObject result = tagArticleRepository.get(query);
@@ -1107,30 +1018,29 @@ public class ArticleQueryService {
                     break;
             }
 
-            organizeArticles(avatarViewMode, ret);
+            organizeArticles(ret);
 
             final Integer participantsCnt = Symphonys.getInt("tagArticleParticipantsCnt");
-            genParticipants(avatarViewMode, ret, participantsCnt);
+            genParticipants(ret, participantsCnt);
 
             return ret;
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets articles by tag [tagTitle=" + tag.optString(Tag.TAG_TITLE) + "] failed", e);
-            throw new ServiceException(e);
+
+            return Collections.emptyList();
         }
     }
 
     /**
-     * Gets an article with {@link #organizeArticle(int, JSONObject)} by the specified id.
+     * Gets an article with {@link #organizeArticle(JSONObject)} by the specified id.
      * <p>
      * Saves thumbnail if it updated.
      * </p>
      *
-     * @param avatarViewMode the specified avatar view mode
-     * @param articleId      the specified id
+     * @param articleId the specified id
      * @return article, return {@code null} if not found
-     * @throws ServiceException service exception
      */
-    public JSONObject getArticleById(final int avatarViewMode, final String articleId) throws ServiceException {
+    public JSONObject getArticleById(final String articleId) {
         Stopwatchs.start("Get article by id");
         try {
             final JSONObject ret = articleRepository.get(articleId);
@@ -1140,7 +1050,7 @@ public class ArticleQueryService {
 
             final JSONObject articleDO = JSONs.clone(ret);
 
-            organizeArticle(avatarViewMode, ret);
+            organizeArticle(ret);
 
             final String generatedThumb = ret.optString(Article.ARTICLE_T_THUMBNAIL_URL);
             final String articleImg1 = ret.optString(Article.ARTICLE_IMG1_URL);
@@ -1158,7 +1068,8 @@ public class ArticleQueryService {
             return ret;
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets an article [articleId=" + articleId + "] failed", e);
-            throw new ServiceException(e);
+
+            return null;
         } finally {
             Stopwatchs.end();
         }
@@ -1169,9 +1080,8 @@ public class ArticleQueryService {
      *
      * @param articleId the specified id
      * @return article, return {@code null} if not found
-     * @throws ServiceException service exception
      */
-    public JSONObject getArticle(final String articleId) throws ServiceException {
+    public JSONObject getArticle(final String articleId) {
         try {
             final JSONObject ret = articleRepository.get(articleId);
             if (null == ret) {
@@ -1181,7 +1091,8 @@ public class ArticleQueryService {
             return ret;
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets an article [articleId=" + articleId + "] failed", e);
-            throw new ServiceException(e);
+
+            return null;
         }
     }
 
@@ -1189,11 +1100,10 @@ public class ArticleQueryService {
      * Gets preview content of the article specified with the given article id.
      *
      * @param articleId the given article id
-     * @param request   the specified request
+     * @param context   the specified request context
      * @return preview content
-     * @throws ServiceException service exception
      */
-    public String getArticlePreviewContent(final String articleId, final HttpServletRequest request) throws ServiceException {
+    public String getArticlePreviewContent(final String articleId, final RequestContext context) {
         final JSONObject article = getArticle(articleId);
         if (null == article) {
             return null;
@@ -1218,7 +1128,7 @@ public class ArticleQueryService {
             }
 
             final Set<String> userNames = userQueryService.getUserNames(ret);
-            final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+            final JSONObject currentUser = Sessions.getUser();
             final String currentUserName = null == currentUser ? "" : currentUser.optString(User.USER_NAME);
             final String authorName = author.optString(User.USER_NAME);
             if (Article.ARTICLE_TYPE_C_DISCUSSION == articleType && !authorName.equals(currentUserName)) {
@@ -1256,22 +1166,19 @@ public class ArticleQueryService {
     /**
      * Gets the user articles with the specified user id, page number and page size.
      *
-     * @param avatarViewMode the specified avatar view mode
      * @param userId         the specified user id
      * @param anonymous      the specified article anonymous
      * @param currentPageNum the specified page number
      * @param pageSize       the specified page size
      * @return user articles, return an empty list if not found
-     * @throws ServiceException service exception
      */
-    public List<JSONObject> getUserArticles(final int avatarViewMode, final String userId, final int anonymous,
-                                            final int currentPageNum, final int pageSize) throws ServiceException {
-        final Query query = new Query().addSort(Article.ARTICLE_CREATE_TIME, SortDirection.DESCENDING)
-                .setCurrentPageNum(currentPageNum).setPageSize(pageSize).
-                        setFilter(CompositeFilterOperator.and(
-                                new PropertyFilter(Article.ARTICLE_AUTHOR_ID, FilterOperator.EQUAL, userId),
-                                new PropertyFilter(Article.ARTICLE_ANONYMOUS, FilterOperator.EQUAL, anonymous),
-                                new PropertyFilter(Article.ARTICLE_STATUS, FilterOperator.NOT_EQUAL, Article.ARTICLE_STATUS_C_INVALID)));
+    public List<JSONObject> getUserArticles(final String userId, final int anonymous, final int currentPageNum, final int pageSize) {
+        final Query query = new Query().addSort(Article.ARTICLE_CREATE_TIME, SortDirection.DESCENDING).
+                setPage(currentPageNum, pageSize).
+                setFilter(CompositeFilterOperator.and(
+                        new PropertyFilter(Article.ARTICLE_AUTHOR_ID, FilterOperator.EQUAL, userId),
+                        new PropertyFilter(Article.ARTICLE_ANONYMOUS, FilterOperator.EQUAL, anonymous),
+                        new PropertyFilter(Article.ARTICLE_STATUS, FilterOperator.NOT_EQUAL, Article.ARTICLE_STATUS_C_INVALID)));
         try {
             final JSONObject result = articleRepository.get(query);
             final List<JSONObject> ret = CollectionUtils.jsonArrayToList(result.optJSONArray(Keys.RESULTS));
@@ -1287,12 +1194,13 @@ public class ArticleQueryService {
             first.put(Pagination.PAGINATION_RECORD_COUNT, recordCount);
             first.put(Pagination.PAGINATION_PAGE_COUNT, pageCount);
 
-            organizeArticles(avatarViewMode, ret);
+            organizeArticles(ret);
 
             return ret;
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets user articles failed", e);
-            throw new ServiceException(e);
+
+            return Collections.emptyList();
         }
     }
 
@@ -1363,19 +1271,18 @@ public class ArticleQueryService {
      * @return top articles query
      */
     private Query makeTopQuery(final int currentPageNum, final int fetchSize) {
-        final Query query = new Query()
-                .addSort(Article.REDDIT_SCORE, SortDirection.DESCENDING)
-                .addSort(Article.ARTICLE_LATEST_CMT_TIME, SortDirection.DESCENDING)
-                .setPageCount(1).setPageSize(fetchSize).setCurrentPageNum(currentPageNum);
-
+        final Query query = new Query().
+                addSort(Article.REDDIT_SCORE, SortDirection.DESCENDING).
+                addSort(Article.ARTICLE_LATEST_CMT_TIME, SortDirection.DESCENDING).
+                setPageCount(1).setPage(currentPageNum, fetchSize);
         query.setFilter(makeArticleShowingFilter());
+
         return query;
     }
 
     /**
      * Gets the recent articles with the specified fetch size.
      *
-     * @param avatarViewMode the specified avatar view mode
      * @param sortMode       the specified sort mode, 0: default, 1: hot, 2: score, 3: reply
      * @param currentPageNum the specified current page number
      * @param fetchSize      the specified fetch size
@@ -1393,11 +1300,8 @@ public class ArticleQueryService {
      *      }, ....]
      * }
      * </pre>
-     * @throws ServiceException service exception
      */
-    public JSONObject getRecentArticles(final int avatarViewMode, final int sortMode,
-                                        final int currentPageNum, final int fetchSize)
-            throws ServiceException {
+    public JSONObject getRecentArticles(final int sortMode, final int currentPageNum, final int fetchSize) {
         final JSONObject ret = new JSONObject();
 
         Query query;
@@ -1406,7 +1310,6 @@ public class ArticleQueryService {
                 query = new Query().
                         addSort(Article.ARTICLE_STICK, SortDirection.DESCENDING).
                         addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                        setPageSize(fetchSize).setCurrentPageNum(currentPageNum).
                         setFilter(makeRecentArticleShowingFilter());
 
                 break;
@@ -1415,8 +1318,7 @@ public class ArticleQueryService {
                 query = new Query().
                         addSort(Article.ARTICLE_STICK, SortDirection.DESCENDING).
                         addSort(Article.ARTICLE_COMMENT_CNT, SortDirection.DESCENDING).
-                        addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                        setPageSize(fetchSize).setCurrentPageNum(currentPageNum);
+                        addSort(Keys.OBJECT_ID, SortDirection.DESCENDING);
                 final CompositeFilter compositeFilter = makeRecentArticleShowingFilter();
                 final List<Filter> filters = new ArrayList<>();
                 filters.add(new PropertyFilter(Keys.OBJECT_ID, FilterOperator.GREATER_THAN_OR_EQUAL, id));
@@ -1429,7 +1331,6 @@ public class ArticleQueryService {
                         addSort(Article.ARTICLE_STICK, SortDirection.DESCENDING).
                         addSort(Article.REDDIT_SCORE, SortDirection.DESCENDING).
                         addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                        setPageSize(fetchSize).setCurrentPageNum(currentPageNum).
                         setFilter(makeRecentArticleShowingFilter());
 
                 break;
@@ -1438,7 +1339,6 @@ public class ArticleQueryService {
                         addSort(Article.ARTICLE_STICK, SortDirection.DESCENDING).
                         addSort(Article.ARTICLE_LATEST_CMT_TIME, SortDirection.DESCENDING).
                         addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                        setPageSize(fetchSize).setCurrentPageNum(currentPageNum).
                         setFilter(makeRecentArticleShowingFilter());
 
                 break;
@@ -1446,19 +1346,18 @@ public class ArticleQueryService {
                 query = new Query().
                         addSort(Article.ARTICLE_STICK, SortDirection.DESCENDING).
                         addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                        setPageSize(fetchSize).setCurrentPageNum(currentPageNum).
                         setFilter(makeRecentArticleShowingFilter());
         }
+        query.setPage(currentPageNum, fetchSize);
+        addListProjections(query);
 
-        JSONObject result;
+        JSONObject result = null;
         try {
             Stopwatchs.start("Query recent articles");
 
             result = articleRepository.get(query);
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets articles failed", e);
-
-            throw new ServiceException(e);
         } finally {
             Stopwatchs.end();
         }
@@ -1476,14 +1375,7 @@ public class ArticleQueryService {
 
         final JSONArray data = result.optJSONArray(Keys.RESULTS);
         final List<JSONObject> articles = CollectionUtils.jsonArrayToList(data);
-
-        try {
-            organizeArticles(avatarViewMode, articles);
-        } catch (final RepositoryException e) {
-            LOGGER.log(Level.ERROR, "Organizes articles failed", e);
-
-            throw new ServiceException(e);
-        }
+        organizeArticles(articles);
 
         //final Integer participantsCnt = Symphonys.getInt("latestArticleParticipantsCnt");
         //genParticipants(articles, participantsCnt);
@@ -1493,71 +1385,61 @@ public class ArticleQueryService {
     }
 
     /**
-     * Gets the index recent (sort by create time) articles.
+     * Gets the index recent articles.
      *
-     * @param avatarViewMode the specified avatar view mode
      * @return recent articles, returns an empty list if not found
-     * @throws ServiceException service exception
      */
-    public List<JSONObject> getIndexRecentArticles(final int avatarViewMode) throws ServiceException {
+    public List<JSONObject> getIndexRecentArticles() {
+        List<JSONObject> ret;
         try {
-            List<JSONObject> ret;
             Stopwatchs.start("Query index recent articles");
             try {
-                ret = articleRepository.select("SELECT\n"
-                        + "	oId,\n"
-                        + "	articleStick,\n"
-                        + "	articleCreateTime,\n"
-                        + "	articleUpdateTime,\n"
-                        + "	articleLatestCmtTime,\n"
-                        + "	articleAuthorId,\n"
-                        + "	articleTitle,\n"
-                        + "	articleStatus,\n"
-                        + "	articleViewCount,\n"
-                        + "	articleType,\n"
-                        + "	articlePermalink,\n"
-                        + "	articleTags,\n"
-                        + "	articleLatestCmterName,\n"
-                        + "	articleCommentCount,\n"
-                        + "	articleAnonymous,\n"
-                        + "	articlePerfect,\n"
-                        + "	articleContent,\n"
-                        + " articleQnAOfferPoint,\n"
-                        + "	CASE\n"
-                        + "WHEN articleLatestCmtTime = 0 THEN\n"
-                        + "	oId\n"
-                        + "ELSE\n"
-                        + "	articleLatestCmtTime\n"
-                        + "END AS flag\n"
-                        + "FROM\n"
-                        + "	`" + articleRepository.getName() + "`\n"
-                        + " WHERE `articleType` != 1 AND `articleStatus` = 0 AND `articleTags` != '" + Tag.TAG_TITLE_C_SANDBOX + "'\n"
-                        + " ORDER BY\n"
-                        + "	articleStick DESC,\n"
-                        + "	flag DESC\n"
-                        + "LIMIT ?", Symphonys.getInt("indexListCnt"));
+                final int fetchSize = Symphonys.getInt("indexListCnt");
+                Query query = new Query().
+                        setFilter(CompositeFilterOperator.and(
+                                new PropertyFilter(Article.ARTICLE_TYPE, FilterOperator.NOT_EQUAL, Article.ARTICLE_TYPE_C_DISCUSSION),
+                                new PropertyFilter(Article.ARTICLE_STATUS, FilterOperator.EQUAL, Article.ARTICLE_STATUS_C_VALID))).
+                        setPageCount(1).setPage(1, fetchSize).
+                        addSort(Article.ARTICLE_LATEST_CMT_TIME, SortDirection.DESCENDING);
+                ret = articleRepository.getList(query);
+
+                final List<JSONObject> stickArticles = getStickArticles();
+                if (!stickArticles.isEmpty()) {
+                    final Iterator<JSONObject> i = ret.iterator();
+                    while (i.hasNext()) {
+                        final JSONObject article = i.next();
+                        for (final JSONObject stickArticle : stickArticles) {
+                            if (article.optString(Keys.OBJECT_ID).equals(stickArticle.optString(Keys.OBJECT_ID))) {
+                                i.remove();
+                            }
+                        }
+                    }
+
+                    ret.addAll(0, stickArticles);
+                    final int size = ret.size() < fetchSize ? ret.size() : fetchSize;
+                    ret = ret.subList(0, size);
+                }
             } finally {
                 Stopwatchs.end();
             }
 
-            organizeArticles(avatarViewMode, ret);
+            organizeArticles(ret);
 
             return ret;
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets index recent articles failed", e);
-            throw new ServiceException(e);
+
+            return Collections.emptyList();
         }
     }
 
     /**
      * Gets the hot articles with the specified fetch size.
      *
-     * @param avatarViewMode the specified avatar view mode
-     * @param fetchSize      the specified fetch size
+     * @param fetchSize the specified fetch size
      * @return hot articles, returns an empty list if not found
-     * @throws ServiceException service exception
      */
-    public List<JSONObject> getHotArticles(final int avatarViewMode, final int fetchSize) throws ServiceException {
+    public List<JSONObject> getHotArticles(final int fetchSize) {
         final Query query = makeTopQuery(1, fetchSize);
 
         try {
@@ -1570,7 +1452,7 @@ public class ArticleQueryService {
                 Stopwatchs.end();
             }
 
-            organizeArticles(avatarViewMode, ret);
+            organizeArticles(ret);
 
             Stopwatchs.start("Checks author status");
             try {
@@ -1594,14 +1476,14 @@ public class ArticleQueryService {
             return ret;
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets index articles failed", e);
-            throw new ServiceException(e);
+
+            return Collections.emptyList();
         }
     }
 
     /**
      * Gets the perfect articles with the specified fetch size.
      *
-     * @param avatarViewMode the specified avatar view mode
      * @param currentPageNum the specified current page number
      * @param fetchSize      the specified fetch size
      * @return for example,      <pre>
@@ -1618,13 +1500,10 @@ public class ArticleQueryService {
      *      }, ....]
      * }
      * </pre>
-     * @throws ServiceException service exception
      */
-    public JSONObject getPerfectArticles(final int avatarViewMode, final int currentPageNum, final int fetchSize)
-            throws ServiceException {
-        final Query query = new Query()
-                .addSort(Keys.OBJECT_ID, SortDirection.DESCENDING)
-                .setCurrentPageNum(currentPageNum).setPageSize(fetchSize);
+    public JSONObject getPerfectArticles(final int currentPageNum, final int fetchSize) {
+        final Query query = new Query().addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
+                setPage(currentPageNum, fetchSize);
         query.setFilter(new PropertyFilter(Article.ARTICLE_PERFECT, FilterOperator.EQUAL, Article.ARTICLE_PERFECT_C_PERFECT));
 
         final JSONObject ret = new JSONObject();
@@ -1637,7 +1516,7 @@ public class ArticleQueryService {
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets articles failed", e);
 
-            throw new ServiceException(e);
+            return null;
         } finally {
             Stopwatchs.end();
         }
@@ -1655,14 +1534,7 @@ public class ArticleQueryService {
 
         final JSONArray data = result.optJSONArray(Keys.RESULTS);
         final List<JSONObject> articles = CollectionUtils.jsonArrayToList(data);
-
-        try {
-            organizeArticles(avatarViewMode, articles);
-        } catch (final RepositoryException e) {
-            LOGGER.log(Level.ERROR, "Organizes articles failed", e);
-
-            throw new ServiceException(e);
-        }
+        organizeArticles(articles);
 
         //final Integer participantsCnt = Symphonys.getInt("latestArticleParticipantsCnt");
         //genParticipants(articles, participantsCnt);
@@ -1683,17 +1555,27 @@ public class ArticleQueryService {
     /**
      * Organizes the specified articles.
      *
-     * @param avatarViewMode the specified avatarViewMode
-     * @param articles       the specified articles
-     * @throws RepositoryException repository exception
-     * @see #organizeArticle(int, org.json.JSONObject)
+     * @param articles the specified articles
+     * @see #organizeArticle(org.json.JSONObject)
      */
-    public void organizeArticles(final int avatarViewMode, final List<JSONObject> articles) throws RepositoryException {
+    public void organizeArticles(final List<JSONObject> articles) {
         Stopwatchs.start("Organize articles");
         try {
-            for (final JSONObject article : articles) {
-                organizeArticle(avatarViewMode, article);
-            }
+            final ForkJoinPool pool = new ForkJoinPool(Symphonys.PROCESSORS);
+            pool.submit(() -> articles.parallelStream().forEach(article -> {
+                try {
+                    organizeArticle(article);
+                } catch (final Exception e) {
+                    LOGGER.log(Level.ERROR, "Organizes article [" + article.optString(Keys.OBJECT_ID) + "] failed", e);
+                } finally {
+                    // LOGGER.log(Level.INFO, "Stopwatch: {0}{1}", Strings.LINE_SEPARATOR, Stopwatchs.getTimingStat());
+                    Stopwatchs.release();
+                }
+            }));
+            pool.shutdown();
+            pool.awaitTermination(10, TimeUnit.SECONDS);
+        } catch (final Exception e) {
+            LOGGER.log(Level.ERROR, "Organizes articles failed", e);
         } finally {
             Stopwatchs.end();
         }
@@ -1718,15 +1600,14 @@ public class ArticleQueryService {
      * <li>image processing if using Qiniu</li>
      * </ul>
      *
-     * @param avatarViewMode the specified avatar view mode
-     * @param article        the specified article
+     * @param article the specified article
      * @throws RepositoryException repository exception
      */
-    public void organizeArticle(final int avatarViewMode, final JSONObject article) throws RepositoryException {
+    public void organizeArticle(final JSONObject article) throws RepositoryException {
         article.put(Article.ARTICLE_T_ORIGINAL_CONTENT, article.optString(Article.ARTICLE_CONTENT));
         article.put(Common.OFFERED, false);
         toArticleDate(article);
-        genArticleAuthor(avatarViewMode, article);
+        genArticleAuthor(article);
 
         final String previewContent = getArticleMetaDesc(article);
         article.put(Article.ARTICLE_T_PREVIEW_CONTENT, previewContent);
@@ -1739,7 +1620,7 @@ public class ArticleQueryService {
             article.put(Article.ARTICLE_CONTENT, content);
         }
 
-        final String title = Encode.forHtml(article.optString(Article.ARTICLE_TITLE));
+        final String title = Escapes.escapeHTML(article.optString(Article.ARTICLE_TITLE));
         article.put(Article.ARTICLE_TITLE, title);
 
         article.put(Article.ARTICLE_T_TITLE_EMOJI, Emotions.convert(title));
@@ -1785,16 +1666,6 @@ public class ArticleQueryService {
             article.put(Article.ARTICLE_LATEST_CMTER_NAME, articleLatestCmterName);
         }
 
-        final Query query = new Query()
-                .setPageCount(1).setCurrentPageNum(1).setPageSize(1)
-                .setFilter(new PropertyFilter(Comment.COMMENT_ON_ARTICLE_ID, FilterOperator.EQUAL, articleId)).
-                        addSort(Keys.OBJECT_ID, SortDirection.DESCENDING);
-        final JSONArray cmts = commentRepository.get(query).optJSONArray(Keys.RESULTS);
-        if (cmts.length() > 0) {
-            final JSONObject latestCmt = cmts.optJSONObject(0);
-            article.put(Article.ARTICLE_T_LATEST_CMT, latestCmt);
-        }
-
         // builds tag objects
         final String tagsStr = article.optString(Article.ARTICLE_TAGS);
         final List<JSONObject> tags = tagQueryService.buildTagObjs(tagsStr);
@@ -1828,7 +1699,7 @@ public class ArticleQueryService {
         for (int i = 0; i < imgs.length; i++) {
             ret = StringUtils.substringBetween(imgs[i], "data-src=\"", "\"");
             if (StringUtils.isBlank(ret)) {
-                ret = StringUtils.substringBetween(ret, "src=\"", "\"");
+                ret = StringUtils.substringBetween(imgs[i], "src=\"", "\"");
             }
 
             if (!StringUtils.containsIgnoreCase(ret, ".ico")) {
@@ -1883,11 +1754,10 @@ public class ArticleQueryService {
     /**
      * Generates the specified article author name and thumbnail URL.
      *
-     * @param avatarViewMode the specified avatar view mode
-     * @param article        the specified article
+     * @param article the specified article
      * @throws RepositoryException repository exception
      */
-    private void genArticleAuthor(final int avatarViewMode, final JSONObject article) throws RepositoryException {
+    private void genArticleAuthor(final JSONObject article) throws RepositoryException {
         final String authorId = article.optString(Article.ARTICLE_AUTHOR_ID);
 
         final JSONObject author = userRepository.get(authorId);
@@ -1900,22 +1770,19 @@ public class ArticleQueryService {
             article.put(Article.ARTICLE_T_AUTHOR_THUMBNAIL_URL + "20", avatarQueryService.getDefaultAvatarURL("20"));
         } else {
             article.put(Article.ARTICLE_T_AUTHOR_NAME, author.optString(User.USER_NAME));
-            article.put(Article.ARTICLE_T_AUTHOR_THUMBNAIL_URL + "210", avatarQueryService.getAvatarURLByUser(avatarViewMode, author, "210"));
-            article.put(Article.ARTICLE_T_AUTHOR_THUMBNAIL_URL + "48", avatarQueryService.getAvatarURLByUser(avatarViewMode, author, "48"));
-            article.put(Article.ARTICLE_T_AUTHOR_THUMBNAIL_URL + "20", avatarQueryService.getAvatarURLByUser(avatarViewMode, author, "20"));
+            article.put(Article.ARTICLE_T_AUTHOR_THUMBNAIL_URL + "210", avatarQueryService.getAvatarURLByUser(author, "210"));
+            article.put(Article.ARTICLE_T_AUTHOR_THUMBNAIL_URL + "48", avatarQueryService.getAvatarURLByUser(author, "48"));
+            article.put(Article.ARTICLE_T_AUTHOR_THUMBNAIL_URL + "20", avatarQueryService.getAvatarURLByUser(author, "20"));
         }
     }
 
     /**
      * Generates participants for the specified articles.
      *
-     * @param avatarViewMode  the specified avatar view mode
      * @param articles        the specified articles
      * @param participantsCnt the specified generate size
-     * @throws ServiceException service exception
      */
-    public void genParticipants(final int avatarViewMode,
-                                final List<JSONObject> articles, final Integer participantsCnt) throws ServiceException {
+    public void genParticipants(final List<JSONObject> articles, final Integer participantsCnt) {
         Stopwatchs.start("Generates participants");
         try {
             for (final JSONObject article : articles) {
@@ -1925,8 +1792,7 @@ public class ArticleQueryService {
                     continue;
                 }
 
-                final List<JSONObject> articleParticipants = getArticleLatestParticipants(
-                        avatarViewMode, article.optString(Keys.OBJECT_ID), participantsCnt);
+                final List<JSONObject> articleParticipants = getArticleLatestParticipants(article.optString(Keys.OBJECT_ID), participantsCnt);
                 article.put(Article.ARTICLE_T_PARTICIPANTS, (Object) articleParticipants);
             }
         } finally {
@@ -1937,9 +1803,8 @@ public class ArticleQueryService {
     /**
      * Gets the article participants (commenters) with the specified article article id and fetch size.
      *
-     * @param avatarViewMode the specified avatar view mode
-     * @param articleId      the specified article id
-     * @param fetchSize      the specified fetch size
+     * @param articleId the specified article id
+     * @param fetchSize the specified fetch size
      * @return article participants, for example,      <pre>
      * [
      *     {
@@ -1951,15 +1816,12 @@ public class ArticleQueryService {
      *     }, ....
      * ]
      * </pre>, returns an empty list if not found
-     * @throws ServiceException service exception
      */
-    public List<JSONObject> getArticleLatestParticipants(final int avatarViewMode,
-                                                         final String articleId, final int fetchSize) throws ServiceException {
-        final Query query = new Query().addSort(Keys.OBJECT_ID, SortDirection.DESCENDING)
-                .setFilter(new PropertyFilter(Comment.COMMENT_ON_ARTICLE_ID, FilterOperator.EQUAL, articleId))
-                .addProjection(Keys.OBJECT_ID, String.class)
-                .addProjection(Comment.COMMENT_AUTHOR_ID, String.class)
-                .setPageCount(1).setCurrentPageNum(1).setPageSize(fetchSize);
+    public List<JSONObject> getArticleLatestParticipants(final String articleId, final int fetchSize) {
+        final Query query = new Query().addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
+                setFilter(new PropertyFilter(Comment.COMMENT_ON_ARTICLE_ID, FilterOperator.EQUAL, articleId)).
+                select(Keys.OBJECT_ID, Comment.COMMENT_AUTHOR_ID).
+                setPageCount(1).setPage(1, fetchSize);
         final List<JSONObject> ret = new ArrayList<>();
 
         try {
@@ -1994,7 +1856,7 @@ public class ArticleQueryService {
 
                 String thumbnailURL = AvatarQueryService.DEFAULT_AVATAR_URL;
                 if (!UserExt.COM_BOT_EMAIL.equals(email)) {
-                    thumbnailURL = avatarQueryService.getAvatarURLByUser(avatarViewMode, commenter, "48");
+                    thumbnailURL = avatarQueryService.getAvatarURLByUser(commenter, "48");
                 }
 
                 final JSONObject participant = new JSONObject();
@@ -2010,7 +1872,8 @@ public class ArticleQueryService {
             return ret;
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets article [" + articleId + "] participants failed", e);
-            throw new ServiceException(e);
+
+            return Collections.emptyList();
         }
     }
 
@@ -2031,9 +1894,9 @@ public class ArticleQueryService {
      *                "articleTitle": "",
      *                ....,
      *                "author": {}
-     * @param request the specified request
+     * @param context the specified request context
      */
-    public void processArticleContent(final JSONObject article, final HttpServletRequest request) {
+    public void processArticleContent(final JSONObject article, final RequestContext context) {
         Stopwatchs.start("Process content");
 
         try {
@@ -2058,7 +1921,7 @@ public class ArticleQueryService {
             String articleContent = article.optString(Article.ARTICLE_CONTENT);
             article.put(Common.DISCUSSION_VIEWABLE, true);
 
-            final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+            final JSONObject currentUser = Sessions.getUser();
             final String currentUserName = null == currentUser ? "" : currentUser.optString(User.USER_NAME);
             final String currentRole = null == currentUser ? "" : currentUser.optString(User.USER_ROLE);
             final String authorName = article.optString(Article.ARTICLE_T_AUTHOR_NAME);
@@ -2095,7 +1958,6 @@ public class ArticleQueryService {
 
             if (Article.ARTICLE_TYPE_C_THOUGHT != articleType) {
                 articleContent = shortLinkQueryService.linkArticle(articleContent);
-                articleContent = shortLinkQueryService.linkTag(articleContent);
                 articleContent = Emotions.convert(articleContent);
                 article.put(Article.ARTICLE_CONTENT, articleContent);
             }
@@ -2103,7 +1965,6 @@ public class ArticleQueryService {
             if (article.optInt(Article.ARTICLE_REWARD_POINT) > 0) {
                 String rewardContent = article.optString(Article.ARTICLE_REWARD_CONTENT);
                 rewardContent = shortLinkQueryService.linkArticle(rewardContent);
-                rewardContent = shortLinkQueryService.linkTag(rewardContent);
                 rewardContent = Emotions.convert(rewardContent);
                 article.put(Article.ARTICLE_REWARD_CONTENT, rewardContent);
             }
@@ -2127,7 +1988,6 @@ public class ArticleQueryService {
     /**
      * Gets articles by the specified request json object.
      *
-     * @param avatarViewMode    the specified avatar view mode
      * @param requestJSONObject the specified request json object, for example
      *                          "oId": "", // optional
      *                          "paginationCurrentPageNum": 1,
@@ -2148,21 +2008,19 @@ public class ArticleQueryService {
      *      }, ....]
      * }
      * </pre>
-     * @throws ServiceException service exception
      * @see Pagination
      */
-    public JSONObject getArticles(final int avatarViewMode,
-                                  final JSONObject requestJSONObject, final Map<String, Class<?>> articleFields) throws ServiceException {
+    public JSONObject getArticles(final JSONObject requestJSONObject, final Map<String, Class<?>> articleFields) {
         final JSONObject ret = new JSONObject();
 
         final int currentPageNum = requestJSONObject.optInt(Pagination.PAGINATION_CURRENT_PAGE_NUM);
         final int pageSize = requestJSONObject.optInt(Pagination.PAGINATION_PAGE_SIZE);
         final int windowSize = requestJSONObject.optInt(Pagination.PAGINATION_WINDOW_SIZE);
-        final Query query = new Query().setCurrentPageNum(currentPageNum).setPageSize(pageSize).
+        final Query query = new Query().setPage(currentPageNum, pageSize).
                 addSort(Article.ARTICLE_STICK, SortDirection.DESCENDING).
                 addSort(Keys.OBJECT_ID, SortDirection.DESCENDING);
         for (final Map.Entry<String, Class<?>> articleField : articleFields.entrySet()) {
-            query.addProjection(articleField.getKey(), articleField.getValue());
+            query.select(articleField.getKey());
         }
 
         if (requestJSONObject.has(Keys.OBJECT_ID)) {
@@ -2175,7 +2033,7 @@ public class ArticleQueryService {
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets articles failed", e);
 
-            throw new ServiceException(e);
+            return null;
         }
 
         final int pageCount = result.optJSONObject(Pagination.PAGINATION).optInt(Pagination.PAGINATION_PAGE_COUNT);
@@ -2188,14 +2046,7 @@ public class ArticleQueryService {
 
         final JSONArray data = result.optJSONArray(Keys.RESULTS);
         final List<JSONObject> articles = CollectionUtils.jsonArrayToList(data);
-
-        try {
-            organizeArticles(avatarViewMode, articles);
-        } catch (final RepositoryException e) {
-            LOGGER.log(Level.ERROR, "Organizes articles failed", e);
-
-            throw new ServiceException(e);
-        }
+        organizeArticles(articles);
 
         ret.put(Article.ARTICLES, articles);
 
@@ -2423,28 +2274,46 @@ public class ArticleQueryService {
     }
 
     private void addListProjections(final Query query) {
-        query.addProjection(Keys.OBJECT_ID, String.class).
-                addProjection(Article.ARTICLE_STICK, Long.class).
-                addProjection(Article.ARTICLE_CREATE_TIME, Long.class).
-                addProjection(Article.ARTICLE_UPDATE_TIME, Long.class).
-                addProjection(Article.ARTICLE_LATEST_CMT_TIME, Long.class).
-                addProjection(Article.ARTICLE_AUTHOR_ID, String.class).
-                addProjection(Article.ARTICLE_TITLE, String.class).
-                addProjection(Article.ARTICLE_STATUS, Integer.class).
-                addProjection(Article.ARTICLE_VIEW_CNT, Integer.class).
-                addProjection(Article.ARTICLE_TYPE, Integer.class).
-                addProjection(Article.ARTICLE_PERMALINK, String.class).
-                addProjection(Article.ARTICLE_TAGS, String.class).
-                addProjection(Article.ARTICLE_LATEST_CMTER_NAME, String.class).
-                addProjection(Article.ARTICLE_COMMENT_CNT, Integer.class).
-                addProjection(Article.ARTICLE_ANONYMOUS, Integer.class).
-                addProjection(Article.ARTICLE_PERFECT, Integer.class).
-                addProjection(Article.ARTICLE_BAD_CNT, Integer.class).
-                addProjection(Article.ARTICLE_GOOD_CNT, Integer.class).
-                addProjection(Article.ARTICLE_COLLECT_CNT, Integer.class).
-                addProjection(Article.ARTICLE_WATCH_CNT, Integer.class).
-                addProjection(Article.ARTICLE_UA, String.class).
-                addProjection(Article.ARTICLE_CONTENT, String.class).
-                addProjection(Article.ARTICLE_QNA_OFFER_POINT, Integer.class);
+        query.select(Keys.OBJECT_ID,
+                Article.ARTICLE_STICK,
+                Article.ARTICLE_CREATE_TIME,
+                Article.ARTICLE_UPDATE_TIME,
+                Article.ARTICLE_LATEST_CMT_TIME,
+                Article.ARTICLE_AUTHOR_ID,
+                Article.ARTICLE_TITLE,
+                Article.ARTICLE_STATUS,
+                Article.ARTICLE_VIEW_CNT,
+                Article.ARTICLE_THANK_CNT,
+                Article.ARTICLE_TYPE,
+                Article.ARTICLE_PERMALINK,
+                Article.ARTICLE_TAGS,
+                Article.ARTICLE_LATEST_CMTER_NAME,
+                Article.ARTICLE_COMMENT_CNT,
+                Article.ARTICLE_ANONYMOUS,
+                Article.ARTICLE_PERFECT,
+                Article.ARTICLE_BAD_CNT,
+                Article.ARTICLE_GOOD_CNT,
+                Article.ARTICLE_COLLECT_CNT,
+                Article.ARTICLE_WATCH_CNT,
+                Article.ARTICLE_UA,
+                Article.ARTICLE_CONTENT,
+                Article.ARTICLE_QNA_OFFER_POINT);
+    }
+
+    private List<JSONObject> getStickArticles() {
+        final Query query = new Query().
+                setFilter(CompositeFilterOperator.and(
+                        new PropertyFilter(Article.ARTICLE_STICK, FilterOperator.NOT_EQUAL, 0L),
+                        new PropertyFilter(Article.ARTICLE_TYPE, FilterOperator.NOT_EQUAL, Article.ARTICLE_TYPE_C_DISCUSSION),
+                        new PropertyFilter(Article.ARTICLE_STATUS, FilterOperator.EQUAL, Article.ARTICLE_STATUS_C_VALID))).
+                setPageCount(1).setPage(1, 2).
+                addSort(Article.ARTICLE_STICK, SortDirection.DESCENDING);
+        try {
+            return articleRepository.getList(query);
+        } catch (final Exception e) {
+            LOGGER.log(Level.ERROR, "Get stick articles failed", e);
+
+            return Collections.emptyList();
+        }
     }
 }

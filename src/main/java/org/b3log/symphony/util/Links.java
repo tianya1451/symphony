@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -59,7 +59,7 @@ public final class Links {
      * @return link like this: <pre>
      * {
      *     "linkAddr": "https://hacpai.com/article/1440573175609",
-     *     "linkTitle": "黑客派简介",
+     *     "linkTitle": "社区简介",
      *     "linkKeywords": "",
      *     "linkHTML": "page HTML",
      *     "linkText": "page text",

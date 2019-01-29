@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -17,17 +17,15 @@
  */
 package org.b3log.symphony.processor;
 
-import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.b3log.latke.Keys;
 import org.b3log.latke.Latkes;
 import org.b3log.latke.ioc.Inject;
-import org.b3log.latke.logging.Level;
 import org.b3log.latke.logging.Logger;
 import org.b3log.latke.model.Pagination;
 import org.b3log.latke.service.LangPropsService;
-import org.b3log.latke.servlet.HTTPRequestContext;
-import org.b3log.latke.servlet.HTTPRequestMethod;
+import org.b3log.latke.servlet.HttpMethod;
+import org.b3log.latke.servlet.RequestContext;
 import org.b3log.latke.servlet.annotation.After;
 import org.b3log.latke.servlet.annotation.Before;
 import org.b3log.latke.servlet.annotation.RequestProcessing;
@@ -47,14 +45,11 @@ import org.b3log.symphony.service.ArticleQueryService;
 import org.b3log.symphony.service.DataModelService;
 import org.b3log.symphony.service.UserMgmtService;
 import org.b3log.symphony.service.UserQueryService;
-import org.b3log.symphony.util.Emotions;
-import org.b3log.symphony.util.Markdowns;
+import org.b3log.symphony.util.Sessions;
 import org.b3log.symphony.util.Symphonys;
 import org.json.JSONObject;
 
 import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import java.io.InputStream;
 import java.util.*;
 
 /**
@@ -67,13 +62,12 @@ import java.util.*;
  * <li>Show hot articles (/hot), GET</li>
  * <li>Show perfect articles (/perfect), GET</li>
  * <li>Shows about (/about), GET</li>
- * <li>Shows b3log (/b3log), GET</li>
  * <li>Shows kill browser (/kill-browser), GET</li>
  * </ul>
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
  * @author <a href="http://vanessa.b3log.org">Liyuan Li</a>
- * @version 1.15.0.1, Sep 14, 2018
+ * @version 1.15.0.3, Jan 8, 2019
  * @since 0.2.0
  */
 @RequestProcessor
@@ -117,37 +111,31 @@ public class IndexProcessor {
     /**
      * Shows question articles.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = {"/qna", "/qna/unanswered", "/qna/reward", "/qna/hot"}, method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, AnonymousViewCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showQnA(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("qna.ftl");
+    @RequestProcessing(value = {"/qna", "/qna/unanswered", "/qna/reward", "/qna/hot"}, method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, AnonymousViewCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showQnA(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "qna.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         final int pageNum = Paginator.getPage(request);
         int pageSize = Symphonys.getInt("indexArticlesCnt");
-        final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject user = Sessions.getUser();
         if (null != user) {
             pageSize = user.optInt(UserExt.USER_LIST_PAGE_SIZE);
 
             if (!UserExt.finshedGuide(user)) {
-                response.sendRedirect(Latkes.getServePath() + "/guide");
+                context.sendRedirect(Latkes.getServePath() + "/guide");
 
                 return;
             }
         }
 
-        final int avatarViewMode = (int) request.getAttribute(UserExt.USER_AVATAR_VIEW_MODE);
-
-        String sortModeStr = StringUtils.substringAfter(request.getRequestURI(), "/qna");
+        String sortModeStr = StringUtils.substringAfter(context.requestURI(), "/qna");
         int sortMode;
         switch (sortModeStr) {
             case "":
@@ -171,7 +159,7 @@ public class IndexProcessor {
         }
 
         dataModel.put(Common.SELECTED, Common.QNA);
-        final JSONObject result = articleQueryService.getQuestionArticles(avatarViewMode, sortMode, pageNum, pageSize);
+        final JSONObject result = articleQueryService.getQuestionArticles(sortMode, pageNum, pageSize);
         final List<JSONObject> allArticles = (List<JSONObject>) result.get(Article.ARTICLES);
         dataModel.put(Common.LATEST_ARTICLES, allArticles);
 
@@ -187,131 +175,98 @@ public class IndexProcessor {
         dataModel.put(Pagination.PAGINATION_PAGE_COUNT, pageCount);
         dataModel.put(Pagination.PAGINATION_PAGE_NUMS, pageNums);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
         dataModelService.fillRandomArticles(dataModel);
         dataModelService.fillSideHotArticles(dataModel);
         dataModelService.fillSideTags(dataModel);
         dataModelService.fillLatestCmts(dataModel);
 
-        dataModel.put(Common.CURRENT, StringUtils.substringAfter(request.getRequestURI(), "/qna"));
+        dataModel.put(Common.CURRENT, StringUtils.substringAfter(context.requestURI(), "/qna"));
     }
 
     /**
      * Shows watch articles or users.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = {"/watch", "/watch/users"}, method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, AnonymousViewCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showWatch(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("watch.ftl");
+    @RequestProcessing(value = {"/watch", "/watch/users"}, method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, AnonymousViewCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showWatch(final RequestContext context) {
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "watch.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         int pageSize = Symphonys.getInt("indexArticlesCnt");
-        final int avatarViewMode = (int) request.getAttribute(UserExt.USER_AVATAR_VIEW_MODE);
-        final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject user = Sessions.getUser();
         if (null != user) {
             pageSize = user.optInt(UserExt.USER_LIST_PAGE_SIZE);
 
             if (!UserExt.finshedGuide(user)) {
-                response.sendRedirect(Latkes.getServePath() + "/guide");
+                context.sendRedirect(Latkes.getServePath() + "/guide");
 
                 return;
             }
         }
 
         dataModel.put(Common.WATCHING_ARTICLES, Collections.emptyList());
-        String sortModeStr = StringUtils.substringAfter(request.getRequestURI(), "/watch");
+        String sortModeStr = StringUtils.substringAfter(context.requestURI(), "/watch");
         switch (sortModeStr) {
             case "":
                 if (null != user) {
-                    final List<JSONObject> followingTagArticles = articleQueryService.getFollowingTagArticles(
-                            avatarViewMode, user.optString(Keys.OBJECT_ID), 1, pageSize);
+                    final List<JSONObject> followingTagArticles = articleQueryService.getFollowingTagArticles(user.optString(Keys.OBJECT_ID), 1, pageSize);
                     dataModel.put(Common.WATCHING_ARTICLES, followingTagArticles);
                 }
 
                 break;
             case "/users":
                 if (null != user) {
-                    final List<JSONObject> followingUserArticles = articleQueryService.getFollowingUserArticles(
-                            avatarViewMode, user.optString(Keys.OBJECT_ID), 1, pageSize);
+                    final List<JSONObject> followingUserArticles = articleQueryService.getFollowingUserArticles(user.optString(Keys.OBJECT_ID), 1, pageSize);
                     dataModel.put(Common.WATCHING_ARTICLES, followingUserArticles);
                 }
 
                 break;
         }
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
         dataModelService.fillRandomArticles(dataModel);
         dataModelService.fillSideHotArticles(dataModel);
         dataModelService.fillSideTags(dataModel);
         dataModelService.fillLatestCmts(dataModel);
 
         dataModel.put(Common.SELECTED, Common.WATCH);
-        dataModel.put(Common.CURRENT, StringUtils.substringAfter(request.getRequestURI(), "/watch"));
-    }
-
-    /**
-     * Shows md guide.
-     *
-     * @param response the specified response
-     */
-    @RequestProcessing(value = "/guide/markdown", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showMDGuide(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response) {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("other/md-guide.ftl");
-        final Map<String, Object> dataModel = renderer.getDataModel();
-
-        try (final InputStream inputStream = IndexProcessor.class.getResourceAsStream("/md_guide.md")) {
-            final String md = IOUtils.toString(inputStream, "UTF-8");
-            String html = Emotions.convert(md);
-            html = Markdowns.toHTML(html);
-
-            dataModel.put("md", md);
-            dataModel.put("html", html);
-        } catch (final Exception e) {
-            LOGGER.log(Level.ERROR, "Loads markdown guide failed", e);
-        }
-
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModel.put(Common.CURRENT, StringUtils.substringAfter(context.requestURI(), "/watch"));
     }
 
     /**
      * Shows index.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = {"", "/"}, method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showIndex(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("index.ftl");
+    @RequestProcessing(value = {"", "/"}, method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showIndex(final RequestContext context) {
+        final JSONObject currentUser = Sessions.getUser();
+        if (null != currentUser) {
+            // 自定义首页跳转 https://github.com/b3log/symphony/issues/774
+            final String indexRedirectURL = currentUser.optString(UserExt.USER_INDEX_REDIRECT_URL);
+            if (StringUtils.isNotBlank(indexRedirectURL)) {
+                context.sendRedirect(indexRedirectURL);
+
+                return;
+            }
+        }
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "index.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
-        final int avatarViewMode = (int) request.getAttribute(UserExt.USER_AVATAR_VIEW_MODE);
-        final List<JSONObject> recentArticles = articleQueryService.getIndexRecentArticles(avatarViewMode);
+        final List<JSONObject> recentArticles = articleQueryService.getIndexRecentArticles();
         dataModel.put(Common.RECENT_ARTICLES, recentArticles);
 
         final List<JSONObject> perfectArticles = articleQueryService.getIndexPerfectArticles();
         dataModel.put(Common.PERFECT_ARTICLES, perfectArticles);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
         dataModelService.fillIndexTags(dataModel);
 
         dataModel.put(Common.SELECTED, Common.INDEX);
@@ -320,36 +275,30 @@ public class IndexProcessor {
     /**
      * Shows recent articles.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = {"/recent", "/recent/hot", "/recent/good", "/recent/reply"}, method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, AnonymousViewCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showRecent(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("recent.ftl");
+    @RequestProcessing(value = {"/recent", "/recent/hot", "/recent/good", "/recent/reply"}, method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, AnonymousViewCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showRecent(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "recent.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
         final int pageNum = Paginator.getPage(request);
         int pageSize = Symphonys.getInt("indexArticlesCnt");
-        final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject user = Sessions.getUser();
         if (null != user) {
             pageSize = user.optInt(UserExt.USER_LIST_PAGE_SIZE);
 
             if (!UserExt.finshedGuide(user)) {
-                response.sendRedirect(Latkes.getServePath() + "/guide");
+                context.sendRedirect(Latkes.getServePath() + "/guide");
 
                 return;
             }
         }
 
-        final int avatarViewMode = (int) request.getAttribute(UserExt.USER_AVATAR_VIEW_MODE);
-
-        String sortModeStr = StringUtils.substringAfter(request.getRequestURI(), "/recent");
+        String sortModeStr = StringUtils.substringAfter(context.requestURI(), "/recent");
         int sortMode;
         switch (sortModeStr) {
             case "":
@@ -373,7 +322,7 @@ public class IndexProcessor {
         }
 
         dataModel.put(Common.SELECTED, Common.RECENT);
-        final JSONObject result = articleQueryService.getRecentArticles(avatarViewMode, sortMode, pageNum, pageSize);
+        final JSONObject result = articleQueryService.getRecentArticles(sortMode, pageNum, pageSize);
         final List<JSONObject> allArticles = (List<JSONObject>) result.get(Article.ARTICLES);
         final List<JSONObject> stickArticles = new ArrayList<>();
         final Iterator<JSONObject> iterator = allArticles.iterator();
@@ -402,50 +351,41 @@ public class IndexProcessor {
         dataModel.put(Pagination.PAGINATION_PAGE_COUNT, pageCount);
         dataModel.put(Pagination.PAGINATION_PAGE_NUMS, pageNums);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
         dataModelService.fillRandomArticles(dataModel);
         dataModelService.fillSideHotArticles(dataModel);
         dataModelService.fillSideTags(dataModel);
         dataModelService.fillLatestCmts(dataModel);
 
-        dataModel.put(Common.CURRENT, StringUtils.substringAfter(request.getRequestURI(), "/recent"));
+        dataModel.put(Common.CURRENT, StringUtils.substringAfter(context.requestURI(), "/recent"));
     }
 
     /**
      * Shows hot articles.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/hot", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, AnonymousViewCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showHotArticles(final HTTPRequestContext context,
-                                final HttpServletRequest request, final HttpServletResponse response) throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("hot.ftl");
+    @RequestProcessing(value = "/hot", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, AnonymousViewCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showHotArticles(final RequestContext context) {
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "hot.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         int pageSize = Symphonys.getInt("indexArticlesCnt");
-        final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject user = Sessions.getUser();
         if (null != user) {
             pageSize = user.optInt(UserExt.USER_LIST_PAGE_SIZE);
         }
 
-        final int avatarViewMode = (int) request.getAttribute(UserExt.USER_AVATAR_VIEW_MODE);
-        final List<JSONObject> indexArticles = articleQueryService.getHotArticles(avatarViewMode, pageSize);
+        final List<JSONObject> indexArticles = articleQueryService.getHotArticles(pageSize);
         dataModel.put(Common.INDEX_ARTICLES, indexArticles);
         dataModel.put(Common.SELECTED, Common.HOT);
 
         Stopwatchs.start("Fills");
         try {
-            dataModelService.fillHeaderAndFooter(request, response, dataModel);
-            if (!(Boolean) dataModel.get(Common.IS_MOBILE)) {
-                dataModelService.fillRandomArticles(dataModel);
-            }
+            dataModelService.fillHeaderAndFooter(context, dataModel);
+            dataModelService.fillRandomArticles(dataModel);
             dataModelService.fillSideHotArticles(dataModel);
             dataModelService.fillSideTags(dataModel);
             dataModelService.fillLatestCmts(dataModel);
@@ -457,34 +397,29 @@ public class IndexProcessor {
     /**
      * Shows perfect articles.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/perfect", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, AnonymousViewCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showPerfectArticles(final HTTPRequestContext context,
-                                    final HttpServletRequest request, final HttpServletResponse response) throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("perfect.ftl");
+    @RequestProcessing(value = "/perfect", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, AnonymousViewCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showPerfectArticles(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "perfect.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
         final int pageNum = Paginator.getPage(request);
         int pageSize = Symphonys.getInt("indexArticlesCnt");
-        final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject user = Sessions.getUser();
         if (null != user) {
             pageSize = user.optInt(UserExt.USER_LIST_PAGE_SIZE);
             if (!UserExt.finshedGuide(user)) {
-                response.sendRedirect(Latkes.getServePath() + "/guide");
+                context.sendRedirect(Latkes.getServePath() + "/guide");
 
                 return;
             }
         }
 
-        final int avatarViewMode = (int) request.getAttribute(UserExt.USER_AVATAR_VIEW_MODE);
-        final JSONObject result = articleQueryService.getPerfectArticles(avatarViewMode, pageNum, pageSize);
+        final JSONObject result = articleQueryService.getPerfectArticles(pageNum, pageSize);
         final List<JSONObject> perfectArticles = (List<JSONObject>) result.get(Article.ARTICLES);
         dataModel.put(Common.PERFECT_ARTICLES, perfectArticles);
         dataModel.put(Common.SELECTED, Common.PERFECT);
@@ -500,7 +435,7 @@ public class IndexProcessor {
         dataModel.put(Pagination.PAGINATION_PAGE_COUNT, pageCount);
         dataModel.put(Pagination.PAGINATION_PAGE_NUMS, pageNums);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
         dataModelService.fillRandomArticles(dataModel);
         dataModelService.fillSideHotArticles(dataModel);
         dataModelService.fillSideTags(dataModel);
@@ -510,60 +445,28 @@ public class IndexProcessor {
     /**
      * Shows about.
      *
-     * @param response the specified response
+     * @param context the specified context
      * @throws Exception exception
      */
-    @RequestProcessing(value = "/about", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = StopwatchStartAdvice.class)
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void showAbout(final HttpServletResponse response) throws Exception {
-        response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY);
-        response.setHeader("Location", "https://hacpai.com/article/1440573175609");
-        response.flushBuffer();
-    }
-
-    /**
-     * Shows b3log.
-     *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     */
-    @RequestProcessing(value = "/b3log", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = StopwatchStartAdvice.class)
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showB3log(final HTTPRequestContext context,
-                          final HttpServletRequest request, final HttpServletResponse response) {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("other/b3log.ftl");
-        final Map<String, Object> dataModel = renderer.getDataModel();
-
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
-        dataModelService.fillRandomArticles(dataModel);
-        dataModelService.fillSideHotArticles(dataModel);
-        dataModelService.fillSideTags(dataModel);
-        dataModelService.fillLatestCmts(dataModel);
+    @RequestProcessing(value = "/about", method = HttpMethod.GET)
+    @Before(StopwatchStartAdvice.class)
+    @After(StopwatchEndAdvice.class)
+    public void showAbout(final RequestContext context) {
+        context.sendRedirect("https://hacpai.com/article/1440573175609");
     }
 
     /**
      * Shows kill browser page with the specified context.
      *
-     * @param context  the specified context
-     * @param request  the specified HTTP servlet request
-     * @param response the specified HTTP servlet response
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/kill-browser", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = StopwatchStartAdvice.class)
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void showKillBrowser(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response) {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        renderer.setTemplateName("other/kill-browser.ftl");
-        context.setRenderer(renderer);
-
+    @RequestProcessing(value = "/kill-browser", method = HttpMethod.GET)
+    @Before(StopwatchStartAdvice.class)
+    @After(StopwatchEndAdvice.class)
+    public void showKillBrowser(final RequestContext context) {
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "other/kill-browser.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
         final Map<String, String> langs = langPropsService.getAll(Locales.getLocale());
-
         dataModel.putAll(langs);
         Keys.fillRuntime(dataModel);
         dataModelService.fillMinified(dataModel);

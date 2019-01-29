@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -56,7 +56,7 @@ public class UserTagRepository extends AbstractRepository {
                 new PropertyFilter(User.USER + "_" + Keys.OBJECT_ID, FilterOperator.EQUAL, userId),
                 new PropertyFilter(Tag.TAG + "_" + Keys.OBJECT_ID, FilterOperator.EQUAL, tagId),
                 new PropertyFilter(Common.TYPE, FilterOperator.EQUAL, type)
-        )).setCurrentPageNum(1).setPageSize(Integer.MAX_VALUE).setPageCount(1);
+        )).setPage(1, Integer.MAX_VALUE).setPageCount(1);
 
         final JSONArray rels = get(query).optJSONArray(Keys.RESULTS);
         for (int i = 0; i < rels.length(); i++) {
@@ -88,7 +88,7 @@ public class UserTagRepository extends AbstractRepository {
      */
     public JSONObject getByUserId(final String userId, final int currentPageNum, final int pageSize) throws RepositoryException {
         final Query query = new Query().setFilter(new PropertyFilter(User.USER + "_" + Keys.OBJECT_ID, FilterOperator.EQUAL, userId)).
-                setCurrentPageNum(currentPageNum).setPageSize(pageSize).setPageCount(1);
+                setPage(currentPageNum, pageSize).setPageCount(1);
 
         return get(query);
     }
@@ -116,7 +116,7 @@ public class UserTagRepository extends AbstractRepository {
      */
     public JSONObject getByTagId(final String tagId, final int currentPageNum, final int pageSize) throws RepositoryException {
         final Query query = new Query().setFilter(new PropertyFilter(Tag.TAG + "_" + Keys.OBJECT_ID, FilterOperator.EQUAL, tagId)).
-                setCurrentPageNum(currentPageNum).setPageSize(pageSize).setPageCount(1);
+                setPage(currentPageNum, pageSize).setPageCount(1);
 
         return get(query);
     }

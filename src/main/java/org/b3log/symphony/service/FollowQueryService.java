@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -42,7 +42,7 @@ import java.util.List;
  * Follow query service.
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
- * @version 1.4.0.7, May 23, 2018
+ * @version 1.4.0.8, Nov 6, 2018
  * @since 0.2.5
  */
 @Service
@@ -96,8 +96,7 @@ public class FollowQueryService {
         try {
             return followRepository.exists(followerId, followingId, followingType);
         } catch (final RepositoryException e) {
-            LOGGER.log(Level.ERROR, "Determines following failed[followerId=" + followerId + ", followingId="
-                    + followingId + ']', e);
+            LOGGER.log(Level.ERROR, "Determines following failed [followerId=" + followerId + ", followingId=" + followingId + "]", e);
 
             return false;
         } finally {
@@ -108,7 +107,6 @@ public class FollowQueryService {
     /**
      * Gets following users of the specified follower.
      *
-     * @param avatarViewMode the specified avatar view mode
      * @param followerId     the specified follower id, may be {@code null}
      * @param currentPageNum the specified page number
      * @param pageSize       the specified page size
@@ -121,7 +119,7 @@ public class FollowQueryService {
      * }
      * </pre>
      */
-    public JSONObject getFollowingUsers(final int avatarViewMode, final String followerId, final int currentPageNum, final int pageSize) {
+    public JSONObject getFollowingUsers(final String followerId, final int currentPageNum, final int pageSize) {
         final JSONObject ret = new JSONObject();
         final List<JSONObject> records = new ArrayList<>();
         ret.put(Keys.RESULTS, (Object) records);
@@ -138,19 +136,19 @@ public class FollowQueryService {
                 final String followingId = follow.optString(Follow.FOLLOWING_ID);
                 final JSONObject user = userRepository.get(followingId);
                 if (null == user) {
-                    LOGGER.log(Level.WARN, "Not found user[id=" + followingId + ']');
+                    LOGGER.log(Level.WARN, "Not found user [id=" + followingId + "]");
 
                     continue;
                 }
 
-                avatarQueryService.fillUserAvatarURL(avatarViewMode, user);
+                avatarQueryService.fillUserAvatarURL(user);
 
                 records.add(user);
             }
 
             ret.put(Pagination.PAGINATION_RECORD_COUNT, result.optInt(Pagination.PAGINATION_RECORD_COUNT));
         } catch (final RepositoryException e) {
-            LOGGER.log(Level.ERROR, "Gets following users of follower[id=" + followerId + "] failed", e);
+            LOGGER.log(Level.ERROR, "Gets following users of follower [id=" + followerId + "] failed", e);
         }
 
         return ret;
@@ -184,7 +182,7 @@ public class FollowQueryService {
                 final String followingId = follow.optString(Follow.FOLLOWING_ID);
                 final JSONObject tag = tagRepository.get(followingId);
                 if (null == tag) {
-                    LOGGER.log(Level.WARN, "Not found tag [followerId=" + followerId + ", followingId=" + followingId + ']');
+                    LOGGER.log(Level.WARN, "Not found tag [followerId=" + followerId + ", followingId=" + followingId + "]");
                     // Fix error data caused by history bug
                     try {
                         final Transaction transaction = followRepository.beginTransaction();
@@ -202,7 +200,7 @@ public class FollowQueryService {
 
             ret.put(Pagination.PAGINATION_RECORD_COUNT, result.optInt(Pagination.PAGINATION_RECORD_COUNT));
         } catch (final RepositoryException e) {
-            LOGGER.log(Level.ERROR, "Gets following tags of follower[id=" + followerId + "] failed", e);
+            LOGGER.log(Level.ERROR, "Gets following tags of follower [id=" + followerId + "] failed", e);
         }
 
         return ret;
@@ -211,7 +209,6 @@ public class FollowQueryService {
     /**
      * Gets following articles of the specified follower.
      *
-     * @param avatarViewMode the specified avatar view mode
      * @param followerId     the specified follower id
      * @param currentPageNum the specified page number
      * @param pageSize       the specified page size
@@ -224,7 +221,7 @@ public class FollowQueryService {
      * }
      * </pre>
      */
-    public JSONObject getFollowingArticles(final int avatarViewMode, final String followerId, final int currentPageNum, final int pageSize) {
+    public JSONObject getFollowingArticles(final String followerId, final int currentPageNum, final int pageSize) {
         final JSONObject ret = new JSONObject();
         final List<JSONObject> records = new ArrayList<>();
         ret.put(Keys.RESULTS, (Object) records);
@@ -238,12 +235,12 @@ public class FollowQueryService {
                 final String followingId = follow.optString(Follow.FOLLOWING_ID);
                 final JSONObject article = articleRepository.get(followingId);
                 if (null == article) {
-                    LOGGER.log(Level.WARN, "Not found article [id=" + followingId + ']');
+                    LOGGER.log(Level.WARN, "Not found article [id=" + followingId + "]");
 
                     continue;
                 }
 
-                articleQueryService.organizeArticle(avatarViewMode, article);
+                articleQueryService.organizeArticle(article);
 
                 records.add(article);
             }
@@ -259,7 +256,6 @@ public class FollowQueryService {
     /**
      * Gets watching articles of the specified follower.
      *
-     * @param avatarViewMode the specified avatar view mode
      * @param followerId     the specified follower id
      * @param currentPageNum the specified page number
      * @param pageSize       the specified page size
@@ -272,7 +268,7 @@ public class FollowQueryService {
      * }
      * </pre>
      */
-    public JSONObject getWatchingArticles(final int avatarViewMode, final String followerId, final int currentPageNum, final int pageSize) {
+    public JSONObject getWatchingArticles(final String followerId, final int currentPageNum, final int pageSize) {
         final JSONObject ret = new JSONObject();
         final List<JSONObject> records = new ArrayList<>();
         ret.put(Keys.RESULTS, (Object) records);
@@ -286,12 +282,12 @@ public class FollowQueryService {
                 final String followingId = follow.optString(Follow.FOLLOWING_ID);
                 final JSONObject article = articleRepository.get(followingId);
                 if (null == article) {
-                    LOGGER.log(Level.WARN, "Not found article [id=" + followingId + ']');
+                    LOGGER.log(Level.WARN, "Not found article [id=" + followingId + "]");
 
                     continue;
                 }
 
-                articleQueryService.organizeArticle(avatarViewMode, article);
+                articleQueryService.organizeArticle(article);
 
                 records.add(article);
             }
@@ -333,12 +329,12 @@ public class FollowQueryService {
                 final String followerId = follow.optString(Follow.FOLLOWER_ID);
                 final JSONObject user = userRepository.get(followerId);
                 if (null == user) {
-                    LOGGER.log(Level.WARN, "Not found user[id=" + followerId + ']');
+                    LOGGER.log(Level.WARN, "Not found user [id=" + followerId + "]");
 
                     continue;
                 }
 
-                avatarQueryService.fillUserAvatarURL(avatarViewMode, user);
+                avatarQueryService.fillUserAvatarURL(user);
 
                 records.add(user);
             }
@@ -354,7 +350,6 @@ public class FollowQueryService {
     /**
      * Gets follower users of the specified following user.
      *
-     * @param avatarViewMode  the specified avatar view mode
      * @param followingUserId the specified following user id
      * @param currentPageNum  the specified page number
      * @param pageSize        the specified page size
@@ -367,7 +362,7 @@ public class FollowQueryService {
      * }
      * </pre>
      */
-    public JSONObject getFollowerUsers(final int avatarViewMode, final String followingUserId, final int currentPageNum, final int pageSize) {
+    public JSONObject getFollowerUsers(final String followingUserId, final int currentPageNum, final int pageSize) {
         final JSONObject ret = new JSONObject();
         final List<JSONObject> records = new ArrayList<>();
         ret.put(Keys.RESULTS, (Object) records);
@@ -380,19 +375,19 @@ public class FollowQueryService {
                 final String followerId = follow.optString(Follow.FOLLOWER_ID);
                 final JSONObject user = userRepository.get(followerId);
                 if (null == user) {
-                    LOGGER.log(Level.WARN, "Not found user[id=" + followerId + ']');
+                    LOGGER.log(Level.WARN, "Not found user [id=" + followerId + "]");
 
                     continue;
                 }
 
-                avatarQueryService.fillUserAvatarURL(avatarViewMode, user);
+                avatarQueryService.fillUserAvatarURL(user);
 
                 records.add(user);
             }
 
             ret.put(Pagination.PAGINATION_RECORD_COUNT, result.optInt(Pagination.PAGINATION_RECORD_COUNT));
         } catch (final RepositoryException e) {
-            LOGGER.log(Level.ERROR, "Gets follower users of following user[id=" + followingUserId + "] failed", e);
+            LOGGER.log(Level.ERROR, "Gets follower users of following user [id=" + followingUserId + "] failed", e);
         }
 
         return ret;
@@ -476,8 +471,8 @@ public class FollowQueryService {
         filters.add(new PropertyFilter(Follow.FOLLOWING_TYPE, FilterOperator.EQUAL, followingType));
 
         final Query query = new Query().addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                setFilter(new CompositeFilter(CompositeFilterOperator.AND, filters))
-                .setPageSize(pageSize).setCurrentPageNum(currentPageNum);
+                setFilter(new CompositeFilter(CompositeFilterOperator.AND, filters)).
+                setPage(currentPageNum, pageSize);
 
         final JSONObject result = followRepository.get(query);
         final List<JSONObject> records = CollectionUtils.jsonArrayToList(result.optJSONArray(Keys.RESULTS));
@@ -517,8 +512,8 @@ public class FollowQueryService {
         filters.add(new PropertyFilter(Follow.FOLLOWING_TYPE, FilterOperator.EQUAL, followingType));
 
         final Query query = new Query().addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                setFilter(new CompositeFilter(CompositeFilterOperator.AND, filters))
-                .setPageSize(pageSize).setCurrentPageNum(currentPageNum);
+                setFilter(new CompositeFilter(CompositeFilterOperator.AND, filters)).
+                setPage(currentPageNum, pageSize);
 
         final JSONObject result = followRepository.get(query);
 

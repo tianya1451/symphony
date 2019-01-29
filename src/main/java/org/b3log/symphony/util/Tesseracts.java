@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -28,7 +28,7 @@ import java.io.IOException;
  * Tesseract-OCR utilities.
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
- * @version 1.0.0.0, Jun 8, 2016
+ * @version 1.0.0.2, Nov 28, 2018
  * @since 1.4.0
  */
 public final class Tesseracts {
@@ -40,12 +40,12 @@ public final class Tesseracts {
      * @return the recognized character
      */
     public static String recognizeCharacter(final String imagePath) {
-        Execs.exec("tesseract " + imagePath + " " + imagePath + " -l chi_sim -psm 10");
+        Execs.exec("tesseract " + imagePath + " " + imagePath + " -l chi_sim -psm 10", 1000 * 10);
 
         try {
             return StringUtils.trim(IOUtils.toString(new FileInputStream(imagePath + ".txt"), "UTF-8"));
         } catch (final IOException e) {
-            return null;
+            return "";
         }
     }
 

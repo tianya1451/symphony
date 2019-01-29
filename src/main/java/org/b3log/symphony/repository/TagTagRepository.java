@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -79,7 +79,7 @@ public class TagTagRepository extends AbstractRepository {
         filters.add(new PropertyFilter(Common.WEIGHT, FilterOperator.GREATER_THAN_OR_EQUAL, WEIGHT));
 
         final Query query = new Query().setFilter(new CompositeFilter(CompositeFilterOperator.AND, filters)).
-                setCurrentPageNum(currentPageNum).setPageSize(pageSize).setPageCount(1).
+                setPage(currentPageNum, pageSize).setPageCount(1).
                 addSort(Common.WEIGHT, SortDirection.DESCENDING);
 
         return get(query);
@@ -113,7 +113,7 @@ public class TagTagRepository extends AbstractRepository {
         filters.add(new PropertyFilter(Common.WEIGHT, FilterOperator.GREATER_THAN_OR_EQUAL, WEIGHT));
 
         final Query query = new Query().setFilter(new CompositeFilter(CompositeFilterOperator.AND, filters)).
-                setCurrentPageNum(currentPageNum).setPageSize(pageSize).setPageCount(1).
+                setPage(currentPageNum, pageSize).setPageCount(1).
                 addSort(Common.WEIGHT, SortDirection.DESCENDING);
 
         return get(query);

@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -21,20 +21,19 @@ import org.b3log.latke.Keys;
 import org.b3log.latke.ioc.Inject;
 import org.b3log.latke.ioc.Singleton;
 import org.b3log.latke.service.LangPropsService;
-import org.b3log.latke.servlet.HTTPRequestContext;
-import org.b3log.latke.servlet.advice.BeforeRequestProcessAdvice;
+import org.b3log.latke.servlet.RequestContext;
+import org.b3log.latke.servlet.advice.ProcessAdvice;
 import org.b3log.latke.servlet.advice.RequestProcessAdviceException;
-import org.b3log.latke.util.Requests;
 import org.b3log.symphony.model.Common;
 import org.b3log.symphony.model.UserExt;
 import org.b3log.symphony.service.ActivityQueryService;
 import org.b3log.symphony.service.LivenessQueryService;
+import org.b3log.symphony.util.Sessions;
 import org.b3log.symphony.util.Symphonys;
 import org.json.JSONObject;
 
 import javax.servlet.http.HttpServletRequest;
 import java.util.Calendar;
-import java.util.Map;
 
 /**
  * Validates for activity 1A0001.
@@ -44,7 +43,7 @@ import java.util.Map;
  * @since 1.3.0
  */
 @Singleton
-public class Activity1A0001Validation extends BeforeRequestProcessAdvice {
+public class Activity1A0001Validation extends ProcessAdvice {
 
     /**
      * Language service.
@@ -65,10 +64,10 @@ public class Activity1A0001Validation extends BeforeRequestProcessAdvice {
     private LivenessQueryService livenessQueryService;
 
     @Override
-    public void doAdvice(final HTTPRequestContext context, final Map<String, Object> args) throws RequestProcessAdviceException {
+    public void doAdvice(final RequestContext context) throws RequestProcessAdviceException {
         final HttpServletRequest request = context.getRequest();
 
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject currentUser = Sessions.getUser();
         final String userId = currentUser.optString(Keys.OBJECT_ID);
         final int currentLiveness = livenessQueryService.getCurrentLivenessPoint(userId);
         final int livenessMax = Symphonys.getInt("activitYesterdayLivenessReward.maxPoint");
@@ -100,7 +99,7 @@ public class Activity1A0001Validation extends BeforeRequestProcessAdvice {
 
         JSONObject requestJSONObject;
         try {
-            requestJSONObject = Requests.parseRequestJSONObject(request, context.getResponse());
+            requestJSONObject = context.requestJSON();
             request.setAttribute(Keys.REQUEST, requestJSONObject);
         } catch (final Exception e) {
             throw new RequestProcessAdviceException(new JSONObject().put(Keys.MSG, e.getMessage()));

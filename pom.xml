@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
     Description: Symphony POM.
-    Version: 2.16.6.110, Oct 24, 2018
+    Version: 2.16.6.125, Jan 15, 2019
     Author: Liang Ding
     Author: Zephyr
 -->
@@ -12,24 +12,24 @@
     <groupId>org.b3log</groupId>
     <artifactId>symphony</artifactId>
     <packaging>war</packaging>
-    <version>3.4.2</version>
+    <version>3.4.6</version>
     <name>Symphony</name>
     <url>https://sym.b3log.org</url>
     <description>
-        一个用 Java 实现的现代化社区（论坛/BBS/社交网络/博客）平台。
+        一款用 Java 实现的现代化社区（论坛/BBS/社交网络/博客）平台。
         A modern community (forum/BBS/SNS/blog) platform written in Java.
     </description>
     <inceptionYear>2012</inceptionYear>
 
     <properties>
-        <latke.version>2.4.20</latke.version>
+        <latke.version>2.4.42</latke.version>
 
         <servlet.version>3.1.0</servlet.version>
-        <jetty.version>9.4.12.v20180830</jetty.version>
+        <jetty.version>9.4.14.v20181114</jetty.version>
         <slf4j.version>1.7.24</slf4j.version>
         <mysql-connector-java.version>8.0.12</mysql-connector-java.version>
         <jsoup.version>1.10.2</jsoup.version>
-        <flexmark.version>0.34.30</flexmark.version>
+        <flexmark.version>0.40.0</flexmark.version>
         <qiniu.version>7.2.11</qiniu.version>
         <jodd.version>5.0.3</jodd.version>
         <emoji-java.version>4.0.0</emoji-java.version>
@@ -39,15 +39,15 @@
         <owasp.version>1.2.2</owasp.version>
         <snakeyaml.version>1.18</snakeyaml.version>
         <freemarker.version>2.3.28</freemarker.version>
+        <javax.mail.version>1.6.2</javax.mail.version>
 
-        <!-- Maven Plugin -->
-        <maven-compiler-plugin.version>3.8.0</maven-compiler-plugin.version>
-        <maven-resources-plugin.version>3.1.0</maven-resources-plugin.version>
-        <maven-surefire-plugin.version>2.22.0</maven-surefire-plugin.version>
         <license-maven-plugin.version>3.0</license-maven-plugin.version>
-        <!-- Unit Test -->
+        <maven-surefire-plugin.version>2.22.1</maven-surefire-plugin.version>
+        <maven-war-plugin.version>3.2.2</maven-war-plugin.version>
         <testng.version>6.14.3</testng.version>
 
+        <maven.compiler.target>1.8</maven.compiler.target>
+        <maven.compiler.source>1.8</maven.compiler.source>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -137,7 +137,7 @@
 
         <dependency>
             <groupId>org.b3log</groupId>
-            <artifactId>latke</artifactId>
+            <artifactId>latke-core</artifactId>
             <version>${latke.version}</version>
             <exclusions>
                 <exclusion>
@@ -283,6 +283,13 @@
             <artifactId>snakeyaml</artifactId>
             <version>${snakeyaml.version}</version>
         </dependency>
+
+        <dependency>
+            <groupId>com.sun.mail</groupId>
+            <artifactId>javax.mail</artifactId>
+            <version>${javax.mail.version}</version>
+        </dependency>
+
     </dependencies>
 
     <build>
@@ -315,29 +322,10 @@
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-resources-plugin</artifactId>
-                <version>${maven-resources-plugin.version}</version>
-                <configuration>
-                    <encoding>UTF-8</encoding>
-                </configuration>
-            </plugin>
-
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>${maven-compiler-plugin.version}</version>
-                <configuration>
-                    <source>1.8</source>
-                    <target>1.8</target>
-                    <encoding>UTF-8</encoding>
-                </configuration>
-            </plugin>
-
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>${maven-surefire-plugin.version}</version>
                 <configuration>
+                    <useSystemClassLoader>false</useSystemClassLoader>
                     <skipTests>false</skipTests>
                 </configuration>
             </plugin>
@@ -359,6 +347,7 @@
                         <include>**/src/*/webapp/css/*.css</include>
                         <include>**/src/*/webapp/scss/*.scss</include>
                         <include>**/src/*/resources/*.properties</include>
+                        <include>**/src/*/webapp/skins/*/*.properties</include>
                         <include>**/src/*/webapp/WEB-INF/*.xml</include>
                         <include>**/src/*/webapp/*.xml</include>
                         <include>gulpfile.js</include>
@@ -379,7 +368,7 @@
                     </mapping>
                     <useDefaultMapping>true</useDefaultMapping>
                     <properties>
-                        <year>2012-2018</year>
+                        <year>2012-2019</year>
                         <devTeam>b3log.org &amp; hacpai.com</devTeam>
                     </properties>
                     <encoding>UTF-8</encoding>
@@ -400,7 +389,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-war-plugin</artifactId>
-                <version>3.0.0</version>
+                <version>${maven-war-plugin.version}</version>
                 <configuration>
                     <webResources>
                         <resource>

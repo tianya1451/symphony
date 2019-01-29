@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -23,8 +23,8 @@ import org.b3log.latke.Latkes;
 import org.b3log.latke.ioc.BeanManager;
 import org.b3log.latke.logging.Level;
 import org.b3log.latke.logging.Logger;
-import org.b3log.latke.repository.jdbc.JdbcRepository;
 import org.b3log.latke.service.LangPropsService;
+import org.b3log.latke.util.Strings;
 import org.b3log.symphony.SymphonyServletListener;
 import org.b3log.symphony.model.Common;
 import org.b3log.symphony.model.Option;
@@ -46,16 +46,22 @@ import java.util.Properties;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 
 /**
  * Symphony utilities.
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
- * @version 1.8.0.2, Oct 16, 2018
+ * @version 1.9.0.3, Dec 2, 2018
  * @since 0.1.0
  */
 public final class Symphonys {
+
+    /**
+     * Logger.
+     */
+    private static final Logger LOGGER = Logger.getLogger(Symphonys.class);
 
     /**
      * Configurations.
@@ -85,12 +91,17 @@ public final class Symphonys {
     /**
      * Thread pool.
      */
-    public static final ThreadPoolExecutor EXECUTOR_SERVICE = (ThreadPoolExecutor) Executors.newFixedThreadPool(50);
+    public static final ThreadPoolExecutor EXECUTOR_SERVICE = (ThreadPoolExecutor) Executors.newFixedThreadPool(128);
 
     /**
-     * Logger.
+     * Cron thread pool.
      */
-    private static final Logger LOGGER = Logger.getLogger(Symphonys.class);
+    public static final ScheduledExecutorService SCHEDULED_EXECUTOR_SERVICE = Executors.newScheduledThreadPool(4);
+
+    /**
+     * Available processors.
+     */
+    public static final int PROCESSORS = Runtime.getRuntime().availableProcessors();
 
     static {
         try {
@@ -174,7 +185,7 @@ public final class Symphonys {
             @Override
             public void run() {
                 final String symURL = Latkes.getServePath();
-                if (Networks.isIPv4(symURL)) {
+                if (Strings.isIPv4(symURL)) {
                     return;
                 }
 
@@ -220,11 +231,20 @@ public final class Symphonys {
                             // ignore
                         }
                     }
-
-                    JdbcRepository.dispose();
                 }
             }
         }, 1000 * 60 * 60 * 2, 1000 * 60 * 60 * 12);
+    }
+
+    /**
+     * Gets the current process's id.
+     *
+     * @return the current process's id
+     */
+    public static long currentPID() {
+        final String processName = java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
+
+        return Long.parseLong(processName.split("@")[0]);
     }
 
     /**

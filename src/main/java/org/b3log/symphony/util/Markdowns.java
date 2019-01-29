@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -28,7 +28,6 @@ import org.b3log.latke.Latkes;
 import org.b3log.latke.ioc.BeanManager;
 import org.b3log.latke.logging.Level;
 import org.b3log.latke.logging.Logger;
-import org.b3log.latke.repository.jdbc.JdbcRepository;
 import org.b3log.latke.service.LangPropsService;
 import org.b3log.latke.util.Callstacks;
 import org.b3log.latke.util.Stopwatchs;
@@ -58,14 +57,14 @@ import java.util.concurrent.*;
 /**
  * <a href="http://en.wikipedia.org/wiki/Markdown">Markdown</a> utilities.
  * <p>
- * Uses the <a href="https://github.com/chjj/marked">marked</a> as the processor, if not found this command, try
+ * Uses the <a href="https://github.com/b3log/http-marked">http-marked</a> as the processor, if not found this service, try
  * built-in <a href="https://github.com/vsch/flexmark-java">flexmark</a> instead.
  * </p>
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
  * @author <a href="http://zephyr.b3log.org">Zephyr</a>
  * @author <a href="http://vanessa.b3log.org">Vanessa</a>
- * @version 1.11.21.7, Oct 20, 2018
+ * @version 1.11.21.11, Jan 10, 2019
  * @since 0.2.0
  */
 public final class Markdowns {
@@ -118,7 +117,7 @@ public final class Markdowns {
             conn.setDoOutput(true);
 
             try (final OutputStream outputStream = conn.getOutputStream()) {
-                IOUtils.write("Symphony 大法好", outputStream, "UTF-8");
+                IOUtils.write("再见理想", outputStream, "UTF-8");
             }
 
             String html;
@@ -128,7 +127,7 @@ public final class Markdowns {
 
             conn.disconnect();
 
-            MARKED_AVAILABLE = StringUtils.contains(html, "<p>Symphony 大法好</p>");
+            MARKED_AVAILABLE = StringUtils.contains(html, "<p>再见理想</p>");
 
             if (MARKED_AVAILABLE) {
                 LOGGER.log(Level.INFO, "[marked] is available, uses it for markdown processing");
@@ -269,27 +268,26 @@ public final class Markdowns {
 
             String html = langPropsService.get("contentRenderFailedLabel");
 
-            if (MARKED_AVAILABLE) {
-                try {
-                    html = toHtmlByMarked(markdownText);
-                    if (!StringUtils.startsWith(html, "<p>")) {
-                        html = "<p>" + html + "</p>";
-                    }
-                } catch (final Exception e) {
-                    LOGGER.log(Level.WARN, "Failed to use [marked] for markdown [md=" + StringUtils.substring(markdownText, 0, 256) + "]: " + e.getMessage());
-
-                    com.vladsch.flexmark.ast.Node document = PARSER.parse(markdownText);
-                    html = RENDERER.render(document);
-                    if (!StringUtils.startsWith(html, "<p>")) {
-                        html = "<p>" + html + "</p>";
-                    }
-                }
+            final int count = StringUtils.countMatches(markdownText, "\n");
+            if (3 >= count) {
+                // 优化 Markdown 渲染 https://github.com/b3log/symphony/issues/841
+                html = toHtmlByFlexmark(markdownText);
             } else {
-                com.vladsch.flexmark.ast.Node document = PARSER.parse(markdownText);
-                html = RENDERER.render(document);
-                if (!StringUtils.startsWith(html, "<p>")) {
-                    html = "<p>" + html + "</p>";
+                if (MARKED_AVAILABLE) {
+                    try {
+                        html = toHtmlByMarked(markdownText);
+                    } catch (final Exception e) {
+                        LOGGER.log(Level.WARN, "Failed to use [marked] for markdown [md=" + StringUtils.substring(markdownText, 0, 256) + "]: " + e.getMessage());
+
+                        html = toHtmlByFlexmark(markdownText);
+                    }
+                } else {
+                    html = toHtmlByFlexmark(markdownText);
                 }
+            }
+
+            if (!StringUtils.startsWith(html, "<p>")) {
+                html = "<p>" + html + "</p>";
             }
 
             final Whitelist whitelist = Whitelist.relaxed();
@@ -316,16 +314,12 @@ public final class Markdowns {
                                 }
 
                                 if (null != userQueryService) {
-                                    try {
-                                        final Set<String> userNames = userQueryService.getUserNames(text);
-                                        for (final String userName : userNames) {
-                                            text = text.replace('@' + userName + (nextIsBr ? "" : " "), "@" + UserExt.getUserLink(userName));
-                                        }
-                                        text = text.replace("@participants ",
-                                                "@<a href='https://hacpai.com/article/1458053458339' target='_blank' class='ft-red'>participants</a> ");
-                                    } finally {
-                                        JdbcRepository.dispose();
+                                    final Set<String> userNames = userQueryService.getUserNames(text);
+                                    for (final String userName : userNames) {
+                                        text = text.replace('@' + userName + (nextIsBr ? "" : " "), "@" + UserExt.getUserLink(userName));
                                     }
+                                    text = text.replace("@participants ",
+                                            "@<a href='https://hacpai.com/article/1458053458339' target='_blank' class='ft-red'>participants</a> ");
                                 }
 
                                 if (text.contains("@<a href=")) {
@@ -427,6 +421,12 @@ public final class Markdowns {
         return ret;
     }
 
+    private static String toHtmlByFlexmark(final String markdownText) {
+        com.vladsch.flexmark.util.ast.Node document = PARSER.parse(markdownText);
+
+        return RENDERER.render(document);
+    }
+
     /**
      * Gets HTML for the specified markdown text.
      *
@@ -457,7 +457,7 @@ public final class Markdowns {
     }
 
     private static void inputWhitelist(final Whitelist whitelist) {
-        whitelist.addTags("span", "hr", "kbd", "samp", "tt", "del", "s", "strike", "u").
+        whitelist.addTags("span", "hr", "kbd", "samp", "tt", "del", "s", "strike", "u", "details", "summary").
                 addAttributes("iframe", "src", "width", "height", "border", "marginwidth", "marginheight").
                 addAttributes("audio", "controls", "src").
                 addAttributes("video", "controls", "src", "width", "height").

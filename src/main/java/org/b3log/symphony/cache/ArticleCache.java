@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -31,7 +31,6 @@ import org.b3log.latke.util.Stopwatchs;
 import org.b3log.symphony.model.Article;
 import org.b3log.symphony.model.Common;
 import org.b3log.symphony.model.Tag;
-import org.b3log.symphony.model.UserExt;
 import org.b3log.symphony.repository.ArticleRepository;
 import org.b3log.symphony.service.ArticleQueryService;
 import org.b3log.symphony.util.JSONs;
@@ -114,7 +113,8 @@ public class ArticleCache {
         try {
             final String id = String.valueOf(DateUtils.addDays(new Date(), -7).getTime());
             final Query query = new Query().addSort(Article.ARTICLE_COMMENT_CNT, SortDirection.DESCENDING).
-                    addSort(Keys.OBJECT_ID, SortDirection.ASCENDING).setCurrentPageNum(1).setPageSize(Symphonys.getInt("sideHotArticlesCnt"));
+                    addSort(Keys.OBJECT_ID, SortDirection.ASCENDING).
+                    setPage(1, Symphonys.getInt("sideHotArticlesCnt"));
 
             final List<Filter> filters = new ArrayList<>();
             filters.add(new PropertyFilter(Keys.OBJECT_ID, FilterOperator.GREATER_THAN_OR_EQUAL, id));
@@ -122,14 +122,11 @@ public class ArticleCache {
             filters.add(new PropertyFilter(Article.ARTICLE_TAGS, FilterOperator.NOT_EQUAL, Tag.TAG_TITLE_C_SANDBOX));
 
             query.setFilter(new CompositeFilter(CompositeFilterOperator.AND, filters)).
-                    addProjection(Article.ARTICLE_TITLE, String.class).
-                    addProjection(Article.ARTICLE_PERMALINK, String.class).
-                    addProjection(Article.ARTICLE_AUTHOR_ID, String.class).
-                    addProjection(Article.ARTICLE_ANONYMOUS, Integer.class);
+                    select(Article.ARTICLE_TITLE, Article.ARTICLE_PERMALINK, Article.ARTICLE_AUTHOR_ID, Article.ARTICLE_ANONYMOUS);
 
             final JSONObject result = articleRepository.get(query);
             final List<JSONObject> articles = CollectionUtils.jsonArrayToList(result.optJSONArray(Keys.RESULTS));
-            articleQueryService.organizeArticles(UserExt.USER_AVATAR_VIEW_MODE_C_STATIC, articles);
+            articleQueryService.organizeArticles(articles);
 
             SIDE_HOT_ARTICLES.clear();
             SIDE_HOT_ARTICLES.addAll(articles);
@@ -177,7 +174,7 @@ public class ArticleCache {
         Stopwatchs.start("Load side random articles");
         try {
             final List<JSONObject> articles = articleRepository.getRandomly(size * 5);
-            articleQueryService.organizeArticles(UserExt.USER_AVATAR_VIEW_MODE_C_STATIC, articles);
+            articleQueryService.organizeArticles(articles);
 
             SIDE_RANDOM_ARTICLES.clear();
             SIDE_RANDOM_ARTICLES.addAll(articles);
@@ -226,32 +223,32 @@ public class ArticleCache {
 
         Stopwatchs.start("Query perfect articles");
         try {
-            final Query query = new Query()
-                    .addSort(Keys.OBJECT_ID, SortDirection.DESCENDING)
-                    .setPageCount(1).setPageSize(Symphonys.getInt("indexPerfectCnt")).setCurrentPageNum(1);
+            final Query query = new Query().
+                    addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
+                    setPageCount(1).setPage(1, Symphonys.getInt("indexPerfectCnt"));
             query.setFilter(new PropertyFilter(Article.ARTICLE_PERFECT, FilterOperator.EQUAL, Article.ARTICLE_PERFECT_C_PERFECT));
-            query.addProjection(Keys.OBJECT_ID, String.class).
-                    addProjection(Article.ARTICLE_STICK, Long.class).
-                    addProjection(Article.ARTICLE_CREATE_TIME, Long.class).
-                    addProjection(Article.ARTICLE_UPDATE_TIME, Long.class).
-                    addProjection(Article.ARTICLE_LATEST_CMT_TIME, Long.class).
-                    addProjection(Article.ARTICLE_AUTHOR_ID, String.class).
-                    addProjection(Article.ARTICLE_TITLE, String.class).
-                    addProjection(Article.ARTICLE_STATUS, Integer.class).
-                    addProjection(Article.ARTICLE_VIEW_CNT, Integer.class).
-                    addProjection(Article.ARTICLE_TYPE, Integer.class).
-                    addProjection(Article.ARTICLE_PERMALINK, String.class).
-                    addProjection(Article.ARTICLE_TAGS, String.class).
-                    addProjection(Article.ARTICLE_LATEST_CMTER_NAME, String.class).
-                    addProjection(Article.ARTICLE_COMMENT_CNT, Integer.class).
-                    addProjection(Article.ARTICLE_ANONYMOUS, Integer.class).
-                    addProjection(Article.ARTICLE_PERFECT, Integer.class).
-                    addProjection(Article.ARTICLE_QNA_OFFER_POINT, Integer.class);
+            query.select(Keys.OBJECT_ID,
+                    Article.ARTICLE_STICK,
+                    Article.ARTICLE_CREATE_TIME,
+                    Article.ARTICLE_UPDATE_TIME,
+                    Article.ARTICLE_LATEST_CMT_TIME,
+                    Article.ARTICLE_AUTHOR_ID,
+                    Article.ARTICLE_TITLE,
+                    Article.ARTICLE_STATUS,
+                    Article.ARTICLE_VIEW_CNT,
+                    Article.ARTICLE_TYPE,
+                    Article.ARTICLE_PERMALINK,
+                    Article.ARTICLE_TAGS,
+                    Article.ARTICLE_LATEST_CMTER_NAME,
+                    Article.ARTICLE_COMMENT_CNT,
+                    Article.ARTICLE_ANONYMOUS,
+                    Article.ARTICLE_PERFECT,
+                    Article.ARTICLE_QNA_OFFER_POINT);
 
             final JSONObject result = articleRepository.get(query);
             final List<JSONObject> articles = CollectionUtils.jsonArrayToList(result.optJSONArray(Keys.RESULTS));
 
-            articleQueryService.organizeArticles(UserExt.USER_AVATAR_VIEW_MODE_C_STATIC, articles);
+            articleQueryService.organizeArticles(articles);
 
             PERFECT_ARTICLES.clear();
             PERFECT_ARTICLES.addAll(articles);

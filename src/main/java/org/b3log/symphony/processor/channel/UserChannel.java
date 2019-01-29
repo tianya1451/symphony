@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -22,7 +22,6 @@ import org.b3log.latke.Keys;
 import org.b3log.latke.ioc.BeanManager;
 import org.b3log.latke.logging.Logger;
 import org.b3log.latke.model.User;
-import org.b3log.latke.repository.jdbc.JdbcRepository;
 import org.b3log.symphony.model.Common;
 import org.b3log.symphony.model.UserExt;
 import org.b3log.symphony.service.UserMgmtService;
@@ -80,11 +79,7 @@ public class UserChannel {
         final BeanManager beanManager = BeanManager.getInstance();
         final UserMgmtService userMgmtService = beanManager.getReference(UserMgmtService.class);
         final String ip = (String) Channels.getHttpSessionAttribute(session, Common.IP);
-        try {
-            userMgmtService.updateOnlineStatus(userId, ip, true, true);
-        } finally {
-            JdbcRepository.dispose();
-        }
+        userMgmtService.updateOnlineStatus(userId, ip, true, true);
     }
 
     /**
@@ -115,11 +110,7 @@ public class UserChannel {
         final BeanManager beanManager = BeanManager.getInstance();
         final UserMgmtService userMgmtService = beanManager.getReference(UserMgmtService.class);
         final String ip = (String) Channels.getHttpSessionAttribute(session, Common.IP);
-        try {
-            userMgmtService.updateOnlineStatus(userId, ip, true, true);
-        } finally {
-            JdbcRepository.dispose();
-        }
+        userMgmtService.updateOnlineStatus(userId, ip, true, true);
     }
 
     /**
@@ -179,22 +170,14 @@ public class UserChannel {
 
         Set<Session> userSessions = SESSIONS.get(userId);
         if (null == userSessions) {
-            try {
-                userMgmtService.updateOnlineStatus(userId, ip, false, false);
-            } finally {
-                JdbcRepository.dispose();
-            }
+            userMgmtService.updateOnlineStatus(userId, ip, false, false);
 
             return;
         }
 
         userSessions.remove(session);
         if (userSessions.isEmpty()) {
-            try {
-                userMgmtService.updateOnlineStatus(userId, ip, false, false);
-            } finally {
-                JdbcRepository.dispose();
-            }
+            userMgmtService.updateOnlineStatus(userId, ip, false, false);
 
             return;
         }

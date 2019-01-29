@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -99,12 +99,10 @@ public class TagArticleRepository extends AbstractRepository {
      */
     public JSONObject getByTagId(final String tagId, final int currentPageNum, final int pageSize)
             throws RepositoryException {
-        final Query query = new Query().setFilter(
-                new PropertyFilter(Tag.TAG + "_" + Keys.OBJECT_ID, FilterOperator.EQUAL, tagId)).
+        final Query query = new Query().
+                setFilter(new PropertyFilter(Tag.TAG + "_" + Keys.OBJECT_ID, FilterOperator.EQUAL, tagId)).
                 addSort(Article.ARTICLE + "_" + Keys.OBJECT_ID, SortDirection.DESCENDING).
-                setCurrentPageNum(currentPageNum).
-                setPageSize(pageSize).
-                setPageCount(1);
+                setPage(currentPageNum, pageSize).setPageCount(1);
 
         return get(query);
     }

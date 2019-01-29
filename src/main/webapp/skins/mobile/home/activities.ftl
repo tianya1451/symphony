@@ -1,7 +1,7 @@
 <#--
 
     Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
-    Copyright (C) 2012-2018, b3log.org & hacpai.com
+    Copyright (C) 2012-2019, b3log.org & hacpai.com
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published by
@@ -41,7 +41,7 @@
                                          aria-label="${activityDailyCheckinLabel}" style="background-image:url('${staticServePath}/images/activities/checkin.png')"></div>
                                     <div class="fn-flex-1">
                                         <h2 class="ft-13">
-                                            <a href="<#if useCaptchaCheckin>${servePath}/activity/checkin<#else>${servePath}/activity/daily-checkin</#if>">${activityDailyCheckinLabel}</a>
+                                            <a href="${servePath}/activity/daily-checkin">${activityDailyCheckinLabel}</a>
                                         </h2>
                                         <span class="ft-fade content-reset">
                                             每日签到随机获得 <code>[${pointActivityCheckinMin?c}, ${pointActivityCheckinMax?c}]</code>，每连续签到 10 天额外获得 <code>${pointActivityCheckinStreak?c}</code>

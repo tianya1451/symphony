@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -18,14 +18,13 @@
 package org.b3log.symphony.processor;
 
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.lang.math.RandomUtils;
 import org.b3log.latke.logging.Level;
 import org.b3log.latke.logging.Logger;
-import org.b3log.latke.servlet.HTTPRequestContext;
-import org.b3log.latke.servlet.HTTPRequestMethod;
+import org.b3log.latke.servlet.HttpMethod;
+import org.b3log.latke.servlet.RequestContext;
 import org.b3log.latke.servlet.annotation.RequestProcessing;
 import org.b3log.latke.servlet.annotation.RequestProcessor;
-import org.b3log.latke.servlet.renderer.PNGRenderer;
+import org.b3log.latke.servlet.renderer.PngRenderer;
 import org.b3log.latke.util.Strings;
 import org.b3log.symphony.model.Common;
 import org.json.JSONObject;
@@ -40,6 +39,7 @@ import org.patchca.word.RandomWordFactory;
 import javax.imageio.ImageIO;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.swing.*;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
@@ -53,7 +53,7 @@ import java.util.Set;
  * Captcha processor.
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
- * @version 2.3.0.5, Sep 21, 2018
+ * @version 2.3.0.6, Nov 2, 2018
  * @since 0.2.2
  */
 @RequestProcessor
@@ -108,9 +108,9 @@ public class CaptchaProcessor {
      *
      * @param context the specified context
      */
-    @RequestProcessing(value = "/captcha", method = HTTPRequestMethod.GET)
-    public void get(final HTTPRequestContext context) {
-        final PNGRenderer renderer = new PNGRenderer();
+    @RequestProcessing(value = "/captcha", method = HttpMethod.GET)
+    public void get(final RequestContext context) {
+        final PngRenderer renderer = new PngRenderer();
         context.setRenderer(renderer);
 
         try {
@@ -154,13 +154,13 @@ public class CaptchaProcessor {
      *
      * @param context the specified context
      */
-    @RequestProcessing(value = "/captcha/login", method = HTTPRequestMethod.GET)
-    public void getLoginCaptcha(final HTTPRequestContext context) {
+    @RequestProcessing(value = "/captcha/login", method = HttpMethod.GET)
+    public void getLoginCaptcha(final RequestContext context) {
         try {
             final HttpServletRequest request = context.getRequest();
             final HttpServletResponse response = context.getResponse();
 
-            final String userId = request.getParameter(Common.NEED_CAPTCHA);
+            final String userId = context.param(Common.NEED_CAPTCHA);
             if (StringUtils.isBlank(userId)) {
                 return;
             }
@@ -174,7 +174,7 @@ public class CaptchaProcessor {
                 return;
             }
 
-            final PNGRenderer renderer = new PNGRenderer();
+            final PngRenderer renderer = new PngRenderer();
             context.setRenderer(renderer);
 
             final ConfigurableCaptchaService cs = new ConfigurableCaptchaService();
@@ -205,7 +205,7 @@ public class CaptchaProcessor {
         }
     }
 
-    private void renderImg(final PNGRenderer renderer, final BufferedImage bufferedImage) throws IOException {
+    private void renderImg(final PngRenderer renderer, final BufferedImage bufferedImage) throws IOException {
         try (final ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
             ImageIO.write(bufferedImage, "png", baos);
             final byte[] data = baos.toByteArray();
@@ -213,7 +213,7 @@ public class CaptchaProcessor {
         }
     }
 
-    private static java.util.List<String> getAvaialbeFonts() {
+    private static List<String> getAvaialbeFonts() {
         final List<String> ret = new ArrayList<>();
 
         final GraphicsEnvironment e = GraphicsEnvironment.getLocalGraphicsEnvironment();
@@ -224,19 +224,8 @@ public class CaptchaProcessor {
             }
         }
 
-        if (0 < fonts.length) {
-            for (int i = 0; i < 5; i++) {
-                ret.add(fonts[RandomUtils.nextInt(fonts.length)].getFontName());
-            }
-        }
-
-        if (ret.isEmpty()) {
-            ret.add(Font.DIALOG);
-            ret.add(Font.DIALOG_INPUT);
-            ret.add(Font.SERIF);
-            ret.add(Font.SANS_SERIF);
-            ret.add(Font.MONOSPACED);
-        }
+        final String defaultFontName = new JLabel().getFont().getFontName();
+        ret.add(defaultFontName);
 
         return ret;
     }

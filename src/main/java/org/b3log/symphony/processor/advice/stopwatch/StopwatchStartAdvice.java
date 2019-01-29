@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -18,12 +18,9 @@
 package org.b3log.symphony.processor.advice.stopwatch;
 
 import org.b3log.latke.service.annotation.Service;
-import org.b3log.latke.servlet.HTTPRequestContext;
-import org.b3log.latke.servlet.advice.BeforeRequestProcessAdvice;
-import org.b3log.latke.servlet.advice.RequestProcessAdviceException;
+import org.b3log.latke.servlet.RequestContext;
+import org.b3log.latke.servlet.advice.ProcessAdvice;
 import org.b3log.latke.util.Stopwatchs;
-
-import java.util.Map;
 
 /**
  * Stopwatch start advice for request processors.
@@ -33,11 +30,11 @@ import java.util.Map;
  * @since 0.2.0
  */
 @Service
-public class StopwatchStartAdvice extends BeforeRequestProcessAdvice {
+public class StopwatchStartAdvice extends ProcessAdvice {
 
     @Override
-    public void doAdvice(final HTTPRequestContext context, final Map<String, Object> args) {
+    public void doAdvice(final RequestContext context) {
         final String requestURI = context.getRequest().getRequestURI();
-        Stopwatchs.start("Request URI [" + requestURI + ']');
+        Stopwatchs.start("Request URI [" + requestURI + "]");
     }
 }

@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -28,7 +28,7 @@ import java.util.regex.Pattern;
  * Video player utilities.
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
- * @version 1.0.1.0, Jul 15, 2018
+ * @version 1.0.1.2, Nov 16, 2018
  * @since 2.2.0
  */
 public final class VideoPlayers {
@@ -37,7 +37,7 @@ public final class VideoPlayers {
      * Video URL regix.
      */
     private static final String VIDEO_URL_REGEX =
-            "<p>( )*<a href.*\\.(rm|rmvb|3gp|avi|mpeg|mp4|wmv|mkv|dat|asf|flv).*</a>( )*</p>";
+            "<p>( )*<a href.*\\.(rm|rmvb|3gp|avi|mpeg|mp4|wmv|mkv|dat|asf|flv|mov|webm).*</a>( )*</p>";
 
     /**
      * Video URL regex pattern.

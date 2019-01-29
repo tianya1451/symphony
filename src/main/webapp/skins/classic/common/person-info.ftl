@@ -1,7 +1,7 @@
 <#--
 
     Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
-    Copyright (C) 2012-2018, b3log.org & hacpai.com
+    Copyright (C) 2012-2019, b3log.org & hacpai.com
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published by
@@ -54,7 +54,7 @@
 
             <div class="fn-right">
                 <#if !isDailyCheckin>
-                    <a class="ft-gray" href="<#if useCaptchaCheckin>${servePath}/activity/checkin<#else>${servePath}/activity/daily-checkin</#if>">${dailyCheckinLabel}</a>
+                    <a class="ft-gray" href="${servePath}/activity/daily-checkin">${dailyCheckinLabel}</a>
                 <#else>
                     <a class="tooltipped tooltipped-w ft-fade" aria-label="${checkinStreakLabel}/${checkinStreakPart0Label}" href="${servePath}/top/checkin">
                     ${currentUser.userCurrentCheckinStreak}/<span class="ft-gray">${currentUser.userLongestCheckinStreak}</span>

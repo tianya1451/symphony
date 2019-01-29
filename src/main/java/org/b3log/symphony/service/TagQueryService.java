@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -28,7 +28,6 @@ import org.b3log.latke.logging.Logger;
 import org.b3log.latke.model.Pagination;
 import org.b3log.latke.model.User;
 import org.b3log.latke.repository.*;
-import org.b3log.latke.service.ServiceException;
 import org.b3log.latke.service.annotation.Service;
 import org.b3log.latke.util.CollectionUtils;
 import org.b3log.latke.util.Paginator;
@@ -321,9 +320,8 @@ public class TagQueryService {
      *
      * @param tagURI the specified tag URI
      * @return tag, returns {@code null} if not null
-     * @throws ServiceException service exception
      */
-    public JSONObject getTagByURI(final String tagURI) throws ServiceException {
+    public JSONObject getTagByURI(final String tagURI) {
         try {
             final JSONObject ret = tagRepository.getByURI(tagURI);
             if (null == ret) {
@@ -355,7 +353,8 @@ public class TagQueryService {
             return ret;
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets tag [uri=" + tagURI + "] failed", e);
-            throw new ServiceException(e);
+
+            return null;
         }
     }
 
@@ -364,9 +363,8 @@ public class TagQueryService {
      *
      * @param tagTitle the specified tag title
      * @return tag, returns {@code null} if not null
-     * @throws ServiceException service exception
      */
-    public JSONObject getTagByTitle(final String tagTitle) throws ServiceException {
+    public JSONObject getTagByTitle(final String tagTitle) {
         try {
             final JSONObject ret = tagRepository.getByTitle(tagTitle);
             if (null == ret) {
@@ -397,7 +395,8 @@ public class TagQueryService {
             return ret;
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets tag [title=" + tagTitle + "] failed", e);
-            throw new ServiceException(e);
+
+            return null;
         }
     }
 
@@ -406,11 +405,10 @@ public class TagQueryService {
      *
      * @param fetchSize the specified fetch size
      * @return trend tags, returns an empty list if not found
-     * @throws ServiceException service exception
      */
-    public List<JSONObject> getTrendTags(final int fetchSize) throws ServiceException {
+    public List<JSONObject> getTrendTags(final int fetchSize) {
         final Query query = new Query().addSort(Tag.TAG_REFERENCE_CNT, SortDirection.DESCENDING).
-                setCurrentPageNum(1).setPageSize(fetchSize).setPageCount(1);
+                setPage(1, fetchSize).setPageCount(1);
 
         try {
             final JSONObject result = tagRepository.get(query);
@@ -423,7 +421,8 @@ public class TagQueryService {
             return ret;
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets trend tags failed");
-            throw new ServiceException(e);
+
+            return null;
         }
     }
 
@@ -441,11 +440,10 @@ public class TagQueryService {
      *
      * @param fetchSize the specified fetch size
      * @return trend tags, returns an empty list if not found
-     * @throws ServiceException service exception
      */
-    public List<JSONObject> getColdTags(final int fetchSize) throws ServiceException {
+    public List<JSONObject> getColdTags(final int fetchSize) {
         final Query query = new Query().addSort(Tag.TAG_REFERENCE_CNT, SortDirection.ASCENDING).
-                setCurrentPageNum(1).setPageSize(fetchSize).setPageCount(1);
+                setPage(1, fetchSize).setPageCount(1);
 
         try {
             final JSONObject result = tagRepository.get(query);
@@ -458,7 +456,8 @@ public class TagQueryService {
             return ret;
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets cold tags failed", e);
-            throw new ServiceException(e);
+
+            return null;
         }
     }
 
@@ -475,8 +474,7 @@ public class TagQueryService {
     /**
      * Gets the creator of the specified tag of the given tag id.
      *
-     * @param avatarViewMode the specified avatar view mode
-     * @param tagId          the given tag id
+     * @param tagId the given tag id
      * @return tag creator, for example,      <pre>
      * {
      *     "tagCreatorThumbnailURL": "",
@@ -484,9 +482,8 @@ public class TagQueryService {
      *     "tagCreatorName": ""
      * }
      * </pre>, returns {@code null} if not found
-     * @throws ServiceException service exception
      */
-    public JSONObject getCreator(final int avatarViewMode, final String tagId) throws ServiceException {
+    public JSONObject getCreator(final String tagId) {
         final List<Filter> filters = new ArrayList<>();
         filters.add(new PropertyFilter(Tag.TAG + '_' + Keys.OBJECT_ID, FilterOperator.EQUAL, tagId));
 
@@ -496,7 +493,7 @@ public class TagQueryService {
 
         filters.add(new CompositeFilter(CompositeFilterOperator.OR, orFilters));
 
-        final Query query = new Query().setCurrentPageNum(1).setPageSize(1).setPageCount(1).
+        final Query query = new Query().setPage(1, 1).setPageCount(1).
                 setFilter(new CompositeFilter(CompositeFilterOperator.AND, filters)).
                 addSort(Keys.OBJECT_ID, SortDirection.ASCENDING);
 
@@ -522,23 +519,23 @@ public class TagQueryService {
 
             final JSONObject creator = userRepository.get(creatorId);
 
-            final String thumbnailURL = avatarQueryService.getAvatarURLByUser(avatarViewMode, creator, "48");
+            final String thumbnailURL = avatarQueryService.getAvatarURLByUser(creator, "48");
             ret.put(Tag.TAG_T_CREATOR_THUMBNAIL_URL, thumbnailURL);
             ret.put(Tag.TAG_T_CREATOR_NAME, creator.optString(User.USER_NAME));
 
             return ret;
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets tag creator failed [tagId=" + tagId + "]", e);
-            throw new ServiceException(e);
+
+            return null;
         }
     }
 
     /**
      * Gets the participants (article ref) of the specified tag of the given tag id.
      *
-     * @param avatarViewMode the specified avatar view mode
-     * @param tagId          the given tag id
-     * @param fetchSize      the specified fetch size
+     * @param tagId     the given tag id
+     * @param fetchSize the specified fetch size
      * @return tag participants, for example,      <pre>
      * [
      *     {
@@ -548,15 +545,13 @@ public class TagQueryService {
      *     }, ....
      * ]
      * </pre>, returns an empty list if not found
-     * @throws ServiceException service exception
      */
-    public List<JSONObject> getParticipants(final int avatarViewMode,
-                                            final String tagId, final int fetchSize) throws ServiceException {
+    public List<JSONObject> getParticipants(final String tagId, final int fetchSize) {
         final List<Filter> filters = new ArrayList<>();
         filters.add(new PropertyFilter(Tag.TAG + '_' + Keys.OBJECT_ID, FilterOperator.EQUAL, tagId));
         filters.add(new PropertyFilter(Common.TYPE, FilterOperator.EQUAL, 1));
 
-        Query query = new Query().setCurrentPageNum(1).setPageSize(fetchSize).setPageCount(1).
+        Query query = new Query().setPage(1, fetchSize).setPageCount(1).
                 setFilter(new CompositeFilter(CompositeFilterOperator.AND, filters));
 
         final List<JSONObject> ret = new ArrayList<>();
@@ -579,7 +574,7 @@ public class TagQueryService {
 
                 participant.put(Tag.TAG_T_PARTICIPANT_NAME, user.optString(User.USER_NAME));
 
-                final String thumbnailURL = avatarQueryService.getAvatarURLByUser(avatarViewMode, user, "48");
+                final String thumbnailURL = avatarQueryService.getAvatarURLByUser(user, "48");
                 participant.put(Tag.TAG_T_PARTICIPANT_THUMBNAIL_URL, thumbnailURL);
                 participant.put(Tag.TAG_T_PARTICIPANT_THUMBNAIL_UPDATE_TIME, user.optLong(UserExt.USER_UPDATE_TIME));
 
@@ -589,7 +584,8 @@ public class TagQueryService {
             return ret;
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets tag participants failed", e);
-            throw new ServiceException(e);
+
+            return Collections.emptyList();
         }
     }
 
@@ -606,9 +602,8 @@ public class TagQueryService {
      *     ....
      * }, ....]
      * </pre>, returns an empty list if not found
-     * @throws ServiceException service exception
      */
-    public List<JSONObject> getRelatedTags(final String tagId, final int fetchSize) throws ServiceException {
+    public List<JSONObject> getRelatedTags(final String tagId, final int fetchSize) {
         final List<JSONObject> ret = new ArrayList<>();
 
         final Set<String> tagIds = new HashSet<>();
@@ -653,7 +648,8 @@ public class TagQueryService {
             return ret;
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets related tags failed", e);
-            throw new ServiceException(e);
+
+            return Collections.emptyList();
         }
     }
 
@@ -681,33 +677,31 @@ public class TagQueryService {
      *      }, ....]
      * }
      * </pre>
-     * @throws ServiceException service exception
      * @see Pagination
      */
-    public JSONObject getTags(final JSONObject requestJSONObject, final Map<String, Class<?>> tagFields) throws ServiceException {
+    public JSONObject getTags(final JSONObject requestJSONObject, final Map<String, Class<?>> tagFields) {
         final JSONObject ret = new JSONObject();
 
         final int currentPageNum = requestJSONObject.optInt(Pagination.PAGINATION_CURRENT_PAGE_NUM);
         final int pageSize = requestJSONObject.optInt(Pagination.PAGINATION_PAGE_SIZE);
         final int windowSize = requestJSONObject.optInt(Pagination.PAGINATION_WINDOW_SIZE);
-        final Query query = new Query().setCurrentPageNum(currentPageNum).setPageSize(pageSize).
+        final Query query = new Query().setPage(currentPageNum, pageSize).
                 addSort(Keys.OBJECT_ID, SortDirection.DESCENDING);
         for (final Map.Entry<String, Class<?>> tagField : tagFields.entrySet()) {
-            query.addProjection(tagField.getKey(), tagField.getValue());
+            query.select(tagField.getKey());
         }
 
         if (requestJSONObject.has(Tag.TAG_TITLE)) {
             query.setFilter(new PropertyFilter(Tag.TAG_TITLE, FilterOperator.EQUAL, requestJSONObject.optString(Tag.TAG_TITLE)));
         }
 
-        JSONObject result = null;
-
+        JSONObject result;
         try {
             result = tagRepository.get(query);
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets tags failed", e);
 
-            throw new ServiceException(e);
+            return null;
         }
 
         final int pageCount = result.optJSONObject(Pagination.PAGINATION).optInt(Pagination.PAGINATION_PAGE_COUNT);
@@ -735,14 +729,14 @@ public class TagQueryService {
      *
      * @param tagId the specified id
      * @return tag, return {@code null} if not found
-     * @throws ServiceException service exception
      */
-    public JSONObject getTag(final String tagId) throws ServiceException {
+    public JSONObject getTag(final String tagId) {
         try {
             return tagRepository.get(tagId);
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets a tag [tagId=" + tagId + "] failed", e);
-            throw new ServiceException(e);
+
+            return null;
         }
     }
 }

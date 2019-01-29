@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -25,16 +25,15 @@ import org.b3log.latke.logging.Logger;
 import org.b3log.latke.model.Pagination;
 import org.b3log.latke.repository.*;
 import org.b3log.latke.service.LangPropsService;
-import org.b3log.latke.service.ServiceException;
 import org.b3log.latke.service.annotation.Service;
 import org.b3log.latke.util.CollectionUtils;
 import org.b3log.symphony.model.*;
 import org.b3log.symphony.repository.*;
 import org.b3log.symphony.util.Emotions;
+import org.b3log.symphony.util.Escapes;
 import org.b3log.symphony.util.Symphonys;
 import org.json.JSONArray;
 import org.json.JSONObject;
-import org.owasp.encoder.Encode;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -44,7 +43,7 @@ import java.util.List;
  * Pointtransfer query service.
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
- * @version 1.21.4.1, Oct 1, 2018
+ * @version 1.21.4.2, Jan 10, 2019
  * @since 1.3.0
  */
 @Service
@@ -116,8 +115,8 @@ public class PointtransferQueryService {
         filters.add(new CompositeFilter(CompositeFilterOperator.OR, userFilters));
         filters.add(new PropertyFilter(Pointtransfer.TYPE, FilterOperator.EQUAL, type));
 
-        final Query query = new Query().addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).setCurrentPageNum(1)
-                .setPageSize(fetchSize).setFilter(new CompositeFilter(CompositeFilterOperator.AND, filters));
+        final Query query = new Query().addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
+                setPage(1, fetchSize).setFilter(new CompositeFilter(CompositeFilterOperator.AND, filters));
 
         try {
             final JSONObject result = pointtransferRepository.get(query);
@@ -133,17 +132,15 @@ public class PointtransferQueryService {
     /**
      * Gets the top balance users with the specified fetch size.
      *
-     * @param avatarViewMode the specified avatar view mode
-     * @param fetchSize      the specified fetch size
+     * @param fetchSize the specified fetch size
      * @return users, returns an empty list if not found
      */
-    public List<JSONObject> getTopBalanceUsers(final int avatarViewMode, final int fetchSize) {
+    public List<JSONObject> getTopBalanceUsers(final int fetchSize) {
         final List<JSONObject> ret = new ArrayList<>();
 
-        final Query query = new Query().addSort(UserExt.USER_POINT, SortDirection.DESCENDING).setCurrentPageNum(1)
-                .setPageSize(fetchSize).
-                        setFilter(new PropertyFilter(UserExt.USER_JOIN_POINT_RANK,
-                                FilterOperator.EQUAL, UserExt.USER_JOIN_POINT_RANK_C_JOIN));
+        final Query query = new Query().addSort(UserExt.USER_POINT, SortDirection.DESCENDING).
+                setPage(1, fetchSize).
+                setFilter(new PropertyFilter(UserExt.USER_JOIN_POINT_RANK, FilterOperator.EQUAL, UserExt.USER_JOIN_XXX_C_JOIN));
 
         final int moneyUnit = Symphonys.getInt("pointExchangeUnit");
         try {
@@ -159,7 +156,7 @@ public class PointtransferQueryService {
 
                 user.put(Common.MONEY, (int) Math.floor(user.optInt(UserExt.USER_POINT) / moneyUnit));
 
-                avatarQueryService.fillUserAvatarURL(avatarViewMode, user);
+                avatarQueryService.fillUserAvatarURL(user);
 
                 ret.add(user);
             }
@@ -173,17 +170,15 @@ public class PointtransferQueryService {
     /**
      * Gets the top consumption users with the specified fetch size.
      *
-     * @param avatarViewMode the specified avatar view mode
-     * @param fetchSize      the specified fetch size
+     * @param fetchSize the specified fetch size
      * @return users, returns an empty list if not found
      */
-    public List<JSONObject> getTopConsumptionUsers(final int avatarViewMode, final int fetchSize) {
+    public List<JSONObject> getTopConsumptionUsers(final int fetchSize) {
         final List<JSONObject> ret = new ArrayList<>();
 
-        final Query query = new Query().addSort(UserExt.USER_USED_POINT, SortDirection.DESCENDING).setCurrentPageNum(1)
-                .setPageSize(fetchSize).
-                        setFilter(new PropertyFilter(UserExt.USER_JOIN_USED_POINT_RANK,
-                                FilterOperator.EQUAL, UserExt.USER_JOIN_USED_POINT_RANK_C_JOIN));
+        final Query query = new Query().addSort(UserExt.USER_USED_POINT, SortDirection.DESCENDING).
+                setPage(1, fetchSize).
+                setFilter(new PropertyFilter(UserExt.USER_JOIN_USED_POINT_RANK, FilterOperator.EQUAL, UserExt.USER_JOIN_XXX_C_JOIN));
 
         final int moneyUnit = Symphonys.getInt("pointExchangeUnit");
         try {
@@ -199,7 +194,7 @@ public class PointtransferQueryService {
 
                 user.put(Common.MONEY, (int) Math.floor(user.optInt(UserExt.USER_USED_POINT) / moneyUnit));
 
-                avatarQueryService.fillUserAvatarURL(avatarViewMode, user);
+                avatarQueryService.fillUserAvatarURL(user);
 
                 ret.add(user);
             }
@@ -224,11 +219,10 @@ public class PointtransferQueryService {
      *     }, ....]
      * }
      * </pre>
-     * @throws ServiceException service exception
      */
-    public JSONObject getUserPoints(final String userId, final int currentPageNum, final int pageSize) throws ServiceException {
-        final Query query = new Query().addSort(Keys.OBJECT_ID, SortDirection.DESCENDING)
-                .setCurrentPageNum(currentPageNum).setPageSize(pageSize);
+    public JSONObject getUserPoints(final String userId, final int currentPageNum, final int pageSize) {
+        final Query query = new Query().addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
+                setPage(currentPageNum, pageSize);
         final List<Filter> filters = new ArrayList<>();
         filters.add(new PropertyFilter(Pointtransfer.FROM_ID, FilterOperator.EQUAL, userId));
         filters.add(new PropertyFilter(Pointtransfer.TO_ID, FilterOperator.EQUAL, userId));
@@ -288,7 +282,7 @@ public class PointtransferQueryService {
 
                         final String addArticleLink = "<a href=\""
                                 + addArticle.optString(Article.ARTICLE_PERMALINK) + "\">"
-                                + Encode.forHtml(addArticle.optString(Article.ARTICLE_TITLE)) + "</a>";
+                                + Escapes.escapeHTML(addArticle.optString(Article.ARTICLE_TITLE)) + "</a>";
                         desTemplate = desTemplate.replace("{article}", addArticleLink);
 
                         break;
@@ -302,7 +296,7 @@ public class PointtransferQueryService {
 
                         final String updateArticleLink = "<a href=\""
                                 + updateArticle.optString(Article.ARTICLE_PERMALINK) + "\">"
-                                + Encode.forHtml(updateArticle.optString(Article.ARTICLE_TITLE)) + "</a>";
+                                + Escapes.escapeHTML(updateArticle.optString(Article.ARTICLE_TITLE)) + "</a>";
                         desTemplate = desTemplate.replace("{article}", updateArticleLink);
 
                         break;
@@ -320,7 +314,7 @@ public class PointtransferQueryService {
 
                         final String commentArticleLink = "<a href=\""
                                 + commentArticle.optString(Article.ARTICLE_PERMALINK) + "\">"
-                                + Encode.forHtml(commentArticle.optString(Article.ARTICLE_TITLE)) + "</a>";
+                                + Escapes.escapeHTML(commentArticle.optString(Article.ARTICLE_TITLE)) + "</a>";
                         desTemplate = desTemplate.replace("{article}", commentArticleLink);
 
                         if ("3In".equals(typeStr)) {
@@ -345,7 +339,7 @@ public class PointtransferQueryService {
 
                         final String commentArticleLink32 = "<a href=\""
                                 + commentArticle32.optString(Article.ARTICLE_PERMALINK) + "\">"
-                                + Encode.forHtml(commentArticle32.optString(Article.ARTICLE_TITLE)) + "</a>";
+                                + Escapes.escapeHTML(commentArticle32.optString(Article.ARTICLE_TITLE)) + "</a>";
                         desTemplate = desTemplate.replace("{article}", commentArticleLink32);
 
                         break;
@@ -359,7 +353,7 @@ public class PointtransferQueryService {
 
                         final String addArticleRewordLink = "<a href=\""
                                 + addArticleReword.optString(Article.ARTICLE_PERMALINK) + "\">"
-                                + Encode.forHtml(addArticleReword.optString(Article.ARTICLE_TITLE)) + "</a>";
+                                + Escapes.escapeHTML(addArticleReword.optString(Article.ARTICLE_TITLE)) + "</a>";
                         desTemplate = desTemplate.replace("{article}", addArticleRewordLink);
 
                         break;
@@ -384,7 +378,7 @@ public class PointtransferQueryService {
 
                         final String articleRewardLink = "<a href=\""
                                 + articleReward.optString(Article.ARTICLE_PERMALINK) + "\">"
-                                + Encode.forHtml(articleReward.optString(Article.ARTICLE_TITLE)) + "</a>";
+                                + Escapes.escapeHTML(articleReward.optString(Article.ARTICLE_TITLE)) + "</a>";
                         desTemplate = desTemplate.replace("{article}", articleRewardLink);
 
                         break;
@@ -407,7 +401,7 @@ public class PointtransferQueryService {
                         }
                         final String articleLink14 = "<a href=\""
                                 + article14.optString(Article.ARTICLE_PERMALINK) + "\">"
-                                + Encode.forHtml(article14.optString(Article.ARTICLE_TITLE)) + "</a>";
+                                + Escapes.escapeHTML(article14.optString(Article.ARTICLE_TITLE)) + "</a>";
                         desTemplate = desTemplate.replace("{article}", articleLink14);
 
                         break;
@@ -432,7 +426,7 @@ public class PointtransferQueryService {
 
                         final String articleLink22 = "<a href=\""
                                 + article22.optString(Article.ARTICLE_PERMALINK) + "\">"
-                                + Encode.forHtml(article22.optString(Article.ARTICLE_TITLE)) + "</a>";
+                                + Escapes.escapeHTML(article22.optString(Article.ARTICLE_TITLE)) + "</a>";
                         desTemplate = desTemplate.replace("{article}", articleLink22);
 
                         break;
@@ -484,7 +478,7 @@ public class PointtransferQueryService {
 
                         final String ArticleLink20 = "<a href=\""
                                 + atParticipantsArticle.optString(Article.ARTICLE_PERMALINK) + "\">"
-                                + Encode.forHtml(atParticipantsArticle.optString(Article.ARTICLE_TITLE)) + "</a>";
+                                + Escapes.escapeHTML(atParticipantsArticle.optString(Article.ARTICLE_TITLE)) + "</a>";
                         desTemplate = desTemplate.replace("{article}", ArticleLink20);
 
                         break;
@@ -498,7 +492,7 @@ public class PointtransferQueryService {
 
                         final String stickArticleLink = "<a href=\""
                                 + stickArticle.optString(Article.ARTICLE_PERMALINK) + "\">"
-                                + Encode.forHtml(stickArticle.optString(Article.ARTICLE_TITLE)) + "</a>";
+                                + Escapes.escapeHTML(stickArticle.optString(Article.ARTICLE_TITLE)) + "</a>";
                         desTemplate = desTemplate.replace("{article}", stickArticleLink);
 
                         break;
@@ -549,7 +543,7 @@ public class PointtransferQueryService {
 
                         final String addArticleBroadcastLink = "<a href=\""
                                 + addArticleBroadcast.optString(Article.ARTICLE_PERMALINK) + "\">"
-                                + Encode.forHtml(addArticleBroadcast.optString(Article.ARTICLE_TITLE)) + "</a>";
+                                + Escapes.escapeHTML(addArticleBroadcast.optString(Article.ARTICLE_TITLE)) + "</a>";
                         desTemplate = desTemplate.replace("{article}", addArticleBroadcastLink);
 
                         break;
@@ -563,7 +557,7 @@ public class PointtransferQueryService {
 
                         final String perfectArticleLink = "<a href=\""
                                 + perfectArticle.optString(Article.ARTICLE_PERMALINK) + "\">"
-                                + Encode.forHtml(perfectArticle.optString(Article.ARTICLE_TITLE)) + "</a>";
+                                + Escapes.escapeHTML(perfectArticle.optString(Article.ARTICLE_TITLE)) + "</a>";
                         desTemplate = desTemplate.replace("{article}", perfectArticleLink);
 
                         break;
@@ -586,7 +580,7 @@ public class PointtransferQueryService {
                         }
                         final String articleLink34 = "<a href=\""
                                 + article34.optString(Article.ARTICLE_PERMALINK) + "\">"
-                                + Encode.forHtml(article34.optString(Article.ARTICLE_TITLE)) + "</a>";
+                                + Escapes.escapeHTML(article34.optString(Article.ARTICLE_TITLE)) + "</a>";
                         desTemplate = desTemplate.replace("{article}", articleLink34);
 
                         break;
@@ -612,7 +606,8 @@ public class PointtransferQueryService {
             return ret;
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets user points failed", e);
-            throw new ServiceException(e);
+
+            return null;
         }
     }
 }

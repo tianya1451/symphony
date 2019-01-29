@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -24,34 +24,32 @@ import org.b3log.latke.ioc.BeanManager;
 import org.b3log.latke.ioc.Singleton;
 import org.b3log.latke.model.User;
 import org.b3log.latke.service.LangPropsService;
-import org.b3log.latke.servlet.HTTPRequestContext;
-import org.b3log.latke.servlet.advice.BeforeRequestProcessAdvice;
+import org.b3log.latke.servlet.RequestContext;
+import org.b3log.latke.servlet.advice.ProcessAdvice;
 import org.b3log.latke.servlet.advice.RequestProcessAdviceException;
 import org.b3log.symphony.model.Article;
-import org.b3log.symphony.model.Common;
 import org.b3log.symphony.model.Role;
 import org.b3log.symphony.model.Tag;
 import org.b3log.symphony.service.OptionQueryService;
 import org.b3log.symphony.service.TagQueryService;
+import org.b3log.symphony.util.Sessions;
 import org.b3log.symphony.util.StatusCodes;
 import org.b3log.symphony.util.Symphonys;
 import org.json.JSONObject;
 
-import javax.servlet.http.HttpServletRequest;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Validates for article adding locally.
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
- * @version 1.3.5.2, Sep 5, 2018
+ * @version 1.3.5.3, Nov 25, 2018
  * @since 0.2.0
  */
 @Singleton
-public class ArticleAddValidation extends BeforeRequestProcessAdvice {
+public class ArticleAddValidation extends ProcessAdvice {
 
     /**
      * Max article title length.
@@ -81,12 +79,11 @@ public class ArticleAddValidation extends BeforeRequestProcessAdvice {
     /**
      * Validates article fields.
      *
-     * @param request           the specified HTTP servlet request
+     * @param context           the specified HTTP servlet request context
      * @param requestJSONObject the specified request object
      * @throws RequestProcessAdviceException if validate failed
      */
-    public static void validateArticleFields(final HttpServletRequest request,
-                                             final JSONObject requestJSONObject) throws RequestProcessAdviceException {
+    public static void validateArticleFields(final RequestContext context, final JSONObject requestJSONObject) throws RequestProcessAdviceException {
         final BeanManager beanManager = BeanManager.getInstance();
         final LangPropsService langPropsService = beanManager.getReference(LangPropsService.class);
         final TagQueryService tagQueryService = beanManager.getReference(TagQueryService.class);
@@ -113,6 +110,11 @@ public class ArticleAddValidation extends BeforeRequestProcessAdvice {
 
         String articleTags = requestJSONObject.optString(Article.ARTICLE_TAGS);
         articleTags = Tag.formatTags(articleTags);
+
+        if (StringUtils.isBlank(articleTags)) {
+            // 发帖时标签改为非必填 https://github.com/b3log/symphony/issues/811
+            articleTags = "待分类";
+        }
 
         if (StringUtils.isBlank(articleTags)) {
             throw new RequestProcessAdviceException(exception.put(Keys.MSG, langPropsService.get("tagsEmptyErrorLabel")));
@@ -146,7 +148,7 @@ public class ArticleAddValidation extends BeforeRequestProcessAdvice {
                     }
                 }
 
-                final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+                final JSONObject currentUser = Sessions.getUser();
                 if (!Role.ROLE_ID_C_ADMIN.equals(currentUser.optString(User.USER_ROLE))
                         && ArrayUtils.contains(Symphonys.RESERVED_TAGS, tagTitle)) {
                     throw new RequestProcessAdviceException(exception.put(Keys.MSG, langPropsService.get("articleTagReservedLabel")
@@ -206,10 +208,8 @@ public class ArticleAddValidation extends BeforeRequestProcessAdvice {
     }
 
     @Override
-    public void doAdvice(final HTTPRequestContext context, final Map<String, Object> args) throws RequestProcessAdviceException {
-        final HttpServletRequest request = context.getRequest();
-        final JSONObject requestJSONObject = (JSONObject) args.get("requestJSONObject");
-
-        validateArticleFields(request, requestJSONObject);
+    public void doAdvice(final RequestContext context) throws RequestProcessAdviceException {
+        final JSONObject requestJSONObject = context.requestJSON();
+        validateArticleFields(context, requestJSONObject);
     }
 }

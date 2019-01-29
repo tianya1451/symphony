@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -29,19 +29,19 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Char room channel.
+ * Chatroom channel.
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
  * @version 1.0.1.1, Apr 25, 2016
  * @since 1.4.0
  */
 @ServerEndpoint(value = "/chat-room-channel", configurator = Channels.WebSocketConfigurator.class)
-public class ChatRoomChannel {
+public class ChatroomChannel {
 
     /**
      * Logger.
      */
-    private static final Logger LOGGER = Logger.getLogger(ChatRoomChannel.class);
+    private static final Logger LOGGER = Logger.getLogger(ChatroomChannel.class);
 
     /**
      * Session set.
@@ -104,12 +104,11 @@ public class ChatRoomChannel {
     /**
      * Notifies the specified chat message to browsers.
      *
-     * @param message the specified message, for example      <pre>
+     * @param message the specified message, for example,
      *                {
-     *                    "userName": "",
-     *                    "content": ""
+     *                "userName": "",
+     *                "content": ""
      *                }
-     *                </pre>
      */
     public static void notifyChat(final JSONObject message) {
         message.put(Common.TYPE, "msg");

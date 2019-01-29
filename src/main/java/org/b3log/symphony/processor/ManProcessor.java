@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -19,15 +19,14 @@ package org.b3log.symphony.processor;
 
 import org.apache.commons.lang.StringUtils;
 import org.b3log.latke.ioc.Inject;
-import org.b3log.latke.servlet.HTTPRequestContext;
-import org.b3log.latke.servlet.HTTPRequestMethod;
+import org.b3log.latke.servlet.HttpMethod;
+import org.b3log.latke.servlet.RequestContext;
 import org.b3log.latke.servlet.annotation.After;
 import org.b3log.latke.servlet.annotation.Before;
 import org.b3log.latke.servlet.annotation.RequestProcessing;
 import org.b3log.latke.servlet.annotation.RequestProcessor;
 import org.b3log.latke.servlet.renderer.AbstractFreeMarkerRenderer;
 import org.b3log.symphony.model.Common;
-import org.b3log.symphony.model.UserExt;
 import org.b3log.symphony.processor.advice.PermissionGrant;
 import org.b3log.symphony.processor.advice.stopwatch.StopwatchEndAdvice;
 import org.b3log.symphony.processor.advice.stopwatch.StopwatchStartAdvice;
@@ -66,37 +65,30 @@ public class ManProcessor {
     /**
      * Shows man.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/man", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = StopwatchStartAdvice.class)
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showMan(final HTTPRequestContext context,
-                        final HttpServletRequest request, final HttpServletResponse response) throws Exception {
+    @RequestProcessing(value = "/man", method = HttpMethod.GET)
+    @Before(StopwatchStartAdvice.class)
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showMan(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+        final HttpServletResponse response = context.getResponse();
         if (!ManQueryService.TLDR_ENABLED) {
-            response.sendRedirect("https://hacpai.com/man");
+            context.sendRedirect("https://hacpai.com/man");
 
             return;
         }
 
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("other/man.ftl");
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "other/man.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
-
-        final int avatarViewMode = (int) request.getAttribute(UserExt.USER_AVATAR_VIEW_MODE);
-
+        dataModelService.fillHeaderAndFooter(context, dataModel);
         dataModelService.fillRandomArticles(dataModel);
         dataModelService.fillSideHotArticles(dataModel);
         dataModelService.fillSideTags(dataModel);
         dataModelService.fillLatestCmts(dataModel);
 
-        String cmd = request.getParameter(Common.CMD);
+        String cmd = context.param(Common.CMD);
         if (StringUtils.isBlank(cmd)) {
             cmd = "man";
         }
@@ -113,15 +105,13 @@ public class ManProcessor {
     /**
      * Lists mans.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/man/cmd", method = HTTPRequestMethod.GET)
-    public void listMans(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response) {
+    @RequestProcessing(value = "/man/cmd", method = HttpMethod.GET)
+    public void listMans(final RequestContext context) {
         context.renderJSON().renderTrueResult();
-
-        final String cmdPrefix = request.getParameter(Common.NAME);
+        final HttpServletRequest request = context.getRequest();
+        final String cmdPrefix = context.param(Common.NAME);
         if (StringUtils.isBlank(cmdPrefix)) {
             return;
         }

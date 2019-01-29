@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -22,15 +22,14 @@ import org.b3log.latke.Latkes;
 import org.b3log.latke.ioc.Inject;
 import org.b3log.latke.logging.Logger;
 import org.b3log.latke.model.Pagination;
-import org.b3log.latke.servlet.HTTPRequestContext;
-import org.b3log.latke.servlet.HTTPRequestMethod;
+import org.b3log.latke.servlet.HttpMethod;
+import org.b3log.latke.servlet.RequestContext;
 import org.b3log.latke.servlet.annotation.After;
 import org.b3log.latke.servlet.annotation.Before;
 import org.b3log.latke.servlet.annotation.RequestProcessing;
 import org.b3log.latke.servlet.annotation.RequestProcessor;
 import org.b3log.latke.servlet.renderer.AbstractFreeMarkerRenderer;
 import org.b3log.latke.util.Paginator;
-import org.b3log.latke.util.Requests;
 import org.b3log.symphony.model.*;
 import org.b3log.symphony.processor.advice.LoginCheck;
 import org.b3log.symphony.processor.advice.PermissionGrant;
@@ -40,6 +39,7 @@ import org.b3log.symphony.service.DataModelService;
 import org.b3log.symphony.service.NotificationMgmtService;
 import org.b3log.symphony.service.NotificationQueryService;
 import org.b3log.symphony.service.UserQueryService;
+import org.b3log.symphony.util.Sessions;
 import org.b3log.symphony.util.Symphonys;
 import org.json.JSONObject;
 
@@ -67,7 +67,7 @@ import java.util.*;
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
  * @author <a href="http://vanessa.b3log.org">Liyuan Li</a>
- * @version 1.12.0.2, Aug 12, 2018
+ * @version 1.12.0.4, Jan 5, 2019
  * @since 0.2.5
  */
 @RequestProcessor
@@ -106,14 +106,14 @@ public class NotificationProcessor {
      * Remove notifications by the specified type.
      *
      * @param context the specified context
-     * @param request the specified request
-     * @param type    the specified type: commented/reply/at/following/point/broadcast
      */
-    @RequestProcessing(value = "/notifications/remove/{type}", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, LoginCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void removeNotifications(final HTTPRequestContext context, final HttpServletRequest request, final String type) {
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+    @RequestProcessing(value = "/notifications/remove/{type}", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, LoginCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void removeNotifications(final RequestContext context) {
+        final String type = context.pathVar("type"); // commented/reply/at/following/point/broadcast
+
+        final JSONObject currentUser = Sessions.getUser();
         final String userId = currentUser.optString(Keys.OBJECT_ID);
 
         switch (type) {
@@ -171,17 +171,16 @@ public class NotificationProcessor {
     /**
      * Removes a notification.
      *
-     * @param context           the specified context
-     * @param request           the specified request
-     * @param requestJSONObject the specified request json object
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/notifications/remove", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, LoginCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void removeNotification(final HTTPRequestContext context, final HttpServletRequest request, final JSONObject requestJSONObject) {
+    @RequestProcessing(value = "/notifications/remove", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, LoginCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void removeNotification(final RequestContext context) {
         context.renderJSON(true);
 
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject requestJSONObject = context.requestJSON();
+        final JSONObject currentUser = Sessions.getUser();
         final String userId = currentUser.optString(Keys.OBJECT_ID);
         final String notificationId = requestJSONObject.optString(Common.ID);
 
@@ -200,21 +199,16 @@ public class NotificationProcessor {
     /**
      * Shows [sysAnnounce] notifications.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/notifications/sys-announce", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, LoginCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showSysAnnounceNotifications(final HTTPRequestContext context, final HttpServletRequest request,
-                                             final HttpServletResponse response) throws Exception {
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+    @RequestProcessing(value = "/notifications/sys-announce", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, LoginCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showSysAnnounceNotifications(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+        final JSONObject currentUser = Sessions.getUser();
 
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("home/notifications/sys-announce.ftl");
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "home/notifications/sys-announce.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         final String userId = currentUser.optString(Keys.OBJECT_ID);
@@ -222,10 +216,7 @@ public class NotificationProcessor {
         final int pageSize = Symphonys.getInt("sysAnnounceNotificationsCnt");
         final int windowSize = Symphonys.getInt("sysAnnounceNotificationsWindowSize");
 
-        final int avatarViewMode = (int) request.getAttribute(UserExt.USER_AVATAR_VIEW_MODE);
-
-        final JSONObject result = notificationQueryService.getSysAnnounceNotifications(
-                avatarViewMode, userId, pageNum, pageSize);
+        final JSONObject result = notificationQueryService.getSysAnnounceNotifications(userId, pageNum, pageSize);
         final List<JSONObject> notifications = (List<JSONObject>) result.get(Keys.RESULTS);
 
         dataModel.put(Common.SYS_ANNOUNCE_NOTIFICATIONS, notifications);
@@ -245,20 +236,19 @@ public class NotificationProcessor {
         dataModel.put(Pagination.PAGINATION_PAGE_COUNT, pageCount);
         dataModel.put(Pagination.PAGINATION_PAGE_NUMS, pageNums);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Makes all notifications as read.
      *
      * @param context the specified context
-     * @param request the specified request
      */
-    @RequestProcessing(value = "/notifications/all-read", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, LoginCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void makeAllNotificationsRead(final HTTPRequestContext context, final HttpServletRequest request) {
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+    @RequestProcessing(value = "/notifications/all-read", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, LoginCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void makeAllNotificationsRead(final RequestContext context) {
+        final JSONObject currentUser = Sessions.getUser();
         final String userId = currentUser.optString(Keys.OBJECT_ID);
 
         notificationMgmtService.makeAllRead(userId);
@@ -270,14 +260,14 @@ public class NotificationProcessor {
      * Makes the specified type notifications as read.
      *
      * @param context the specified context
-     * @param request the specified request
-     * @param type    the specified type: "commented"/"at"/"following"
      */
-    @RequestProcessing(value = "/notifications/read/{type}", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, LoginCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void makeNotificationRead(final HTTPRequestContext context, final HttpServletRequest request, final String type) {
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+    @RequestProcessing(value = "/notifications/read/{type}", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, LoginCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void makeNotificationReadByType(final RequestContext context) {
+        final String type = context.pathVar("type"); // "commented"/"at"/"following"
+
+        final JSONObject currentUser = Sessions.getUser();
         final String userId = currentUser.optString(Keys.OBJECT_ID);
 
         switch (type) {
@@ -318,17 +308,14 @@ public class NotificationProcessor {
     /**
      * Makes article/comment read.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/notifications/read", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, LoginCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void makeNotificationRead(final HTTPRequestContext context, final HttpServletRequest request,
-                                     final HttpServletResponse response) {
-        final JSONObject requestJSONObject = Requests.parseRequestJSONObject(request, response);
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+    @RequestProcessing(value = "/notifications/read", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, LoginCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void makeNotificationRead(final RequestContext context) {
+        final JSONObject requestJSONObject = context.requestJSON();
+        final JSONObject currentUser = Sessions.getUser();
         final String userId = currentUser.optString(Keys.OBJECT_ID);
         final String articleId = requestJSONObject.optString(Article.ARTICLE_T_ID);
         final List<String> commentIds = Arrays.asList(requestJSONObject.optString(Comment.COMMENT_T_IDS).split(","));
@@ -341,37 +328,31 @@ public class NotificationProcessor {
     /**
      * Navigates notifications.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/notifications", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, LoginCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void navigateNotifications(final HTTPRequestContext context, final HttpServletRequest request,
-                                      final HttpServletResponse response) throws Exception {
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+    @RequestProcessing(value = "/notifications", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, LoginCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void navigateNotifications(final RequestContext context) {
+        final JSONObject currentUser = Sessions.getUser();
         if (null == currentUser) {
-            response.sendError(HttpServletResponse.SC_FORBIDDEN);
+            context.sendError(HttpServletResponse.SC_FORBIDDEN);
 
             return;
         }
 
         final String userId = currentUser.optString(Keys.OBJECT_ID);
 
-        final int unreadCommentedNotificationCnt
-                = notificationQueryService.getUnreadNotificationCountByType(userId, Notification.DATA_TYPE_C_COMMENTED);
+        final int unreadCommentedNotificationCnt = notificationQueryService.getUnreadNotificationCountByType(userId, Notification.DATA_TYPE_C_COMMENTED);
         if (unreadCommentedNotificationCnt > 0) {
-            response.sendRedirect(Latkes.getServePath() + "/notifications/commented");
+            context.sendRedirect(Latkes.getServePath() + "/notifications/commented");
 
             return;
         }
 
-        final int unreadReplyNotificationCnt
-                = notificationQueryService.getUnreadNotificationCountByType(userId, Notification.DATA_TYPE_C_REPLY);
+        final int unreadReplyNotificationCnt = notificationQueryService.getUnreadNotificationCountByType(userId, Notification.DATA_TYPE_C_REPLY);
         if (unreadReplyNotificationCnt > 0) {
-            response.sendRedirect(Latkes.getServePath() + "/notifications/reply");
+            context.sendRedirect(Latkes.getServePath() + "/notifications/reply");
 
             return;
         }
@@ -385,21 +366,21 @@ public class NotificationProcessor {
                 + notificationQueryService.getUnreadNotificationCountByType(userId, Notification.DATA_TYPE_C_ARTICLE_VOTE_UP)
                 + notificationQueryService.getUnreadNotificationCountByType(userId, Notification.DATA_TYPE_C_ARTICLE_VOTE_DOWN);
         if (unreadAtNotificationCnt > 0) {
-            response.sendRedirect(Latkes.getServePath() + "/notifications/at");
+            context.sendRedirect(Latkes.getServePath() + "/notifications/at");
 
             return;
         }
 
         final int unreadPointNotificationCnt = notificationQueryService.getUnreadPointNotificationCount(userId);
         if (unreadPointNotificationCnt > 0) {
-            response.sendRedirect(Latkes.getServePath() + "/notifications/point");
+            context.sendRedirect(Latkes.getServePath() + "/notifications/point");
 
             return;
         }
 
         final int unreadFollowingNotificationCnt = notificationQueryService.getUnreadFollowingNotificationCount(userId);
         if (unreadFollowingNotificationCnt > 0) {
-            response.sendRedirect(Latkes.getServePath() + "/notifications/following");
+            context.sendRedirect(Latkes.getServePath() + "/notifications/following");
 
             return;
         }
@@ -407,44 +388,40 @@ public class NotificationProcessor {
         final int unreadBroadcastCnt
                 = notificationQueryService.getUnreadNotificationCountByType(userId, Notification.DATA_TYPE_C_BROADCAST);
         if (unreadBroadcastCnt > 0) {
-            response.sendRedirect(Latkes.getServePath() + "/notifications/broadcast");
+            context.sendRedirect(Latkes.getServePath() + "/notifications/broadcast");
 
             return;
         }
 
         final int unreadSysAnnounceCnt = notificationQueryService.getUnreadSysAnnounceNotificationCount(userId);
         if (unreadSysAnnounceCnt > 0) {
-            response.sendRedirect(Latkes.getServePath() + "/notifications/sys-announce");
+            context.sendRedirect(Latkes.getServePath() + "/notifications/sys-announce");
 
             return;
         }
 
-        response.sendRedirect(Latkes.getServePath() + "/notifications/commented");
+        context.sendRedirect(Latkes.getServePath() + "/notifications/commented");
     }
 
     /**
      * Shows [point] notifications.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/notifications/point", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, LoginCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showPointNotifications(final HTTPRequestContext context, final HttpServletRequest request,
-                                       final HttpServletResponse response) throws Exception {
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+    @RequestProcessing(value = "/notifications/point", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, LoginCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showPointNotifications(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final JSONObject currentUser = Sessions.getUser();
         if (null == currentUser) {
-            response.sendError(HttpServletResponse.SC_FORBIDDEN);
+            context.sendError(HttpServletResponse.SC_FORBIDDEN);
 
             return;
         }
 
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("home/notifications/point.ftl");
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "home/notifications/point.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         final String userId = currentUser.optString(Keys.OBJECT_ID);
@@ -473,7 +450,7 @@ public class NotificationProcessor {
         dataModel.put(Pagination.PAGINATION_PAGE_COUNT, pageCount);
         dataModel.put(Pagination.PAGINATION_PAGE_NUMS, pageNums);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
@@ -483,12 +460,10 @@ public class NotificationProcessor {
      * @param dataModel the specified data model
      */
     private void fillNotificationCount(final String userId, final Map<String, Object> dataModel) {
-        final int unreadCommentedNotificationCnt
-                = notificationQueryService.getUnreadNotificationCountByType(userId, Notification.DATA_TYPE_C_COMMENTED);
+        final int unreadCommentedNotificationCnt = notificationQueryService.getUnreadNotificationCountByType(userId, Notification.DATA_TYPE_C_COMMENTED);
         dataModel.put(Common.UNREAD_COMMENTED_NOTIFICATION_CNT, unreadCommentedNotificationCnt);
 
-        final int unreadReplyNotificationCnt
-                = notificationQueryService.getUnreadNotificationCountByType(userId, Notification.DATA_TYPE_C_REPLY);
+        final int unreadReplyNotificationCnt = notificationQueryService.getUnreadNotificationCountByType(userId, Notification.DATA_TYPE_C_REPLY);
         dataModel.put(Common.UNREAD_REPLY_NOTIFICATION_CNT, unreadReplyNotificationCnt);
 
         final int unreadAtNotificationCnt
@@ -501,23 +476,19 @@ public class NotificationProcessor {
                 + notificationQueryService.getUnreadNotificationCountByType(userId, Notification.DATA_TYPE_C_ARTICLE_VOTE_DOWN);
         dataModel.put(Common.UNREAD_AT_NOTIFICATION_CNT, unreadAtNotificationCnt);
 
-        final int unreadFollowingNotificationCnt
-                = notificationQueryService.getUnreadFollowingNotificationCount(userId);
+        final int unreadFollowingNotificationCnt = notificationQueryService.getUnreadFollowingNotificationCount(userId);
         dataModel.put(Common.UNREAD_FOLLOWING_NOTIFICATION_CNT, unreadFollowingNotificationCnt);
 
-        final int unreadPointNotificationCnt
-                = notificationQueryService.getUnreadPointNotificationCount(userId);
+        final int unreadPointNotificationCnt = notificationQueryService.getUnreadPointNotificationCount(userId);
         dataModel.put(Common.UNREAD_POINT_NOTIFICATION_CNT, unreadPointNotificationCnt);
 
-        final int unreadBroadcastNotificationCnt
-                = notificationQueryService.getUnreadNotificationCountByType(userId, Notification.DATA_TYPE_C_BROADCAST);
+        final int unreadBroadcastNotificationCnt = notificationQueryService.getUnreadNotificationCountByType(userId, Notification.DATA_TYPE_C_BROADCAST);
         dataModel.put(Common.UNREAD_BROADCAST_NOTIFICATION_CNT, unreadBroadcastNotificationCnt);
 
         final int unreadSysAnnounceNotificationCnt = notificationQueryService.getUnreadSysAnnounceNotificationCount(userId);
         dataModel.put(Common.UNREAD_SYS_ANNOUNCE_NOTIFICATION_CNT, unreadSysAnnounceNotificationCnt);
 
-        final int unreadNewFollowerNotificationCnt = notificationQueryService.getUnreadNotificationCountByType(
-                userId, Notification.DATA_TYPE_C_NEW_FOLLOWER);
+        final int unreadNewFollowerNotificationCnt = notificationQueryService.getUnreadNotificationCountByType(userId, Notification.DATA_TYPE_C_NEW_FOLLOWER);
         dataModel.put(Common.UNREAD_NEW_FOLLOWER_NOTIFICATION_CNT, unreadNewFollowerNotificationCnt);
 
         dataModel.put(Common.UNREAD_NOTIFICATION_CNT, unreadAtNotificationCnt + unreadBroadcastNotificationCnt
@@ -528,26 +499,21 @@ public class NotificationProcessor {
     /**
      * Shows [commented] notifications.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/notifications/commented", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, LoginCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showCommentedNotifications(final HTTPRequestContext context, final HttpServletRequest request,
-                                           final HttpServletResponse response) throws Exception {
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+    @RequestProcessing(value = "/notifications/commented", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, LoginCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showCommentedNotifications(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+        final JSONObject currentUser = Sessions.getUser();
         if (null == currentUser) {
-            response.sendError(HttpServletResponse.SC_FORBIDDEN);
+            context.sendError(HttpServletResponse.SC_FORBIDDEN);
 
             return;
         }
 
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("home/notifications/commented.ftl");
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "home/notifications/commented.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         final String userId = currentUser.optString(Keys.OBJECT_ID);
@@ -555,10 +521,7 @@ public class NotificationProcessor {
         final int pageSize = Symphonys.getInt("commentedNotificationsCnt");
         final int windowSize = Symphonys.getInt("commentedNotificationsWindowSize");
 
-        final int avatarViewMode = (int) request.getAttribute(UserExt.USER_AVATAR_VIEW_MODE);
-
-        final JSONObject result = notificationQueryService.getCommentedNotifications(
-                avatarViewMode, userId, pageNum, pageSize);
+        final JSONObject result = notificationQueryService.getCommentedNotifications(userId, pageNum, pageSize);
         final List<JSONObject> commentedNotifications = (List<JSONObject>) result.get(Keys.RESULTS);
         dataModel.put(Common.COMMENTED_NOTIFICATIONS, commentedNotifications);
 
@@ -577,32 +540,28 @@ public class NotificationProcessor {
         dataModel.put(Pagination.PAGINATION_PAGE_COUNT, pageCount);
         dataModel.put(Pagination.PAGINATION_PAGE_NUMS, pageNums);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Shows [reply] notifications.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/notifications/reply", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, LoginCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showReplyNotifications(final HTTPRequestContext context, final HttpServletRequest request,
-                                       final HttpServletResponse response) throws Exception {
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+    @RequestProcessing(value = "/notifications/reply", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, LoginCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showReplyNotifications(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final JSONObject currentUser = Sessions.getUser();
         if (null == currentUser) {
-            response.sendError(HttpServletResponse.SC_FORBIDDEN);
+            context.sendError(HttpServletResponse.SC_FORBIDDEN);
 
             return;
         }
 
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("home/notifications/reply.ftl");
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "home/notifications/reply.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         final String userId = currentUser.optString(Keys.OBJECT_ID);
@@ -610,10 +569,7 @@ public class NotificationProcessor {
         final int pageSize = Symphonys.getInt("replyNotificationsCnt");
         final int windowSize = Symphonys.getInt("replyNotificationsWindowSize");
 
-        final int avatarViewMode = (int) request.getAttribute(UserExt.USER_AVATAR_VIEW_MODE);
-
-        final JSONObject result = notificationQueryService.getReplyNotifications(
-                avatarViewMode, userId, pageNum, pageSize);
+        final JSONObject result = notificationQueryService.getReplyNotifications(userId, pageNum, pageSize);
         final List<JSONObject> replyNotifications = (List<JSONObject>) result.get(Keys.RESULTS);
         dataModel.put(Common.REPLY_NOTIFICATIONS, replyNotifications);
 
@@ -632,32 +588,28 @@ public class NotificationProcessor {
         dataModel.put(Pagination.PAGINATION_PAGE_COUNT, pageCount);
         dataModel.put(Pagination.PAGINATION_PAGE_NUMS, pageNums);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Shows [at] notifications.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/notifications/at", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, LoginCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showAtNotifications(final HTTPRequestContext context, final HttpServletRequest request,
-                                    final HttpServletResponse response) throws Exception {
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+    @RequestProcessing(value = "/notifications/at", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, LoginCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showAtNotifications(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final JSONObject currentUser = Sessions.getUser();
         if (null == currentUser) {
-            response.sendError(HttpServletResponse.SC_FORBIDDEN);
+            context.sendError(HttpServletResponse.SC_FORBIDDEN);
 
             return;
         }
 
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("home/notifications/at.ftl");
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "home/notifications/at.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         final String userId = currentUser.optString(Keys.OBJECT_ID);
@@ -665,9 +617,7 @@ public class NotificationProcessor {
         final int pageSize = Symphonys.getInt("atNotificationsCnt");
         final int windowSize = Symphonys.getInt("atNotificationsWindowSize");
 
-        final int avatarViewMode = (int) request.getAttribute(UserExt.USER_AVATAR_VIEW_MODE);
-
-        final JSONObject result = notificationQueryService.getAtNotifications(avatarViewMode, userId, pageNum, pageSize);
+        final JSONObject result = notificationQueryService.getAtNotifications(userId, pageNum, pageSize);
         final List<JSONObject> atNotifications = (List<JSONObject>) result.get(Keys.RESULTS);
 
         dataModel.put(Common.AT_NOTIFICATIONS, atNotifications);
@@ -695,32 +645,28 @@ public class NotificationProcessor {
         dataModel.put(Pagination.PAGINATION_PAGE_COUNT, pageCount);
         dataModel.put(Pagination.PAGINATION_PAGE_NUMS, pageNums);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Shows [following] notifications.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/notifications/following", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, LoginCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showFollowingNotifications(final HTTPRequestContext context, final HttpServletRequest request,
-                                           final HttpServletResponse response) throws Exception {
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+    @RequestProcessing(value = "/notifications/following", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, LoginCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showFollowingNotifications(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final JSONObject currentUser = Sessions.getUser();
         if (null == currentUser) {
-            response.sendError(HttpServletResponse.SC_FORBIDDEN);
+            context.sendError(HttpServletResponse.SC_FORBIDDEN);
 
             return;
         }
 
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("home/notifications/following.ftl");
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "home/notifications/following.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         final String userId = currentUser.optString(Keys.OBJECT_ID);
@@ -728,10 +674,7 @@ public class NotificationProcessor {
         final int pageSize = Symphonys.getInt("followingNotificationsCnt");
         final int windowSize = Symphonys.getInt("followingNotificationsWindowSize");
 
-        final int avatarViewMode = (int) request.getAttribute(UserExt.USER_AVATAR_VIEW_MODE);
-
-        final JSONObject result = notificationQueryService.getFollowingNotifications(
-                avatarViewMode, userId, pageNum, pageSize);
+        final JSONObject result = notificationQueryService.getFollowingNotifications(userId, pageNum, pageSize);
         final List<JSONObject> followingNotifications = (List<JSONObject>) result.get(Keys.RESULTS);
 
         dataModel.put(Common.FOLLOWING_NOTIFICATIONS, followingNotifications);
@@ -751,32 +694,28 @@ public class NotificationProcessor {
         dataModel.put(Pagination.PAGINATION_PAGE_COUNT, pageCount);
         dataModel.put(Pagination.PAGINATION_PAGE_NUMS, pageNums);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Shows [broadcast] notifications.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/notifications/broadcast", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, LoginCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showBroadcastNotifications(final HTTPRequestContext context, final HttpServletRequest request,
-                                           final HttpServletResponse response) throws Exception {
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+    @RequestProcessing(value = "/notifications/broadcast", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, LoginCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showBroadcastNotifications(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final JSONObject currentUser = Sessions.getUser();
         if (null == currentUser) {
-            response.sendError(HttpServletResponse.SC_FORBIDDEN);
+            context.sendError(HttpServletResponse.SC_FORBIDDEN);
 
             return;
         }
 
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("home/notifications/broadcast.ftl");
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "home/notifications/broadcast.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         final String userId = currentUser.optString(Keys.OBJECT_ID);
@@ -784,10 +723,7 @@ public class NotificationProcessor {
         final int pageSize = Symphonys.getInt("broadcastNotificationsCnt");
         final int windowSize = Symphonys.getInt("broadcastNotificationsWindowSize");
 
-        final int avatarViewMode = (int) request.getAttribute(UserExt.USER_AVATAR_VIEW_MODE);
-
-        final JSONObject result = notificationQueryService.getBroadcastNotifications(
-                avatarViewMode, userId, pageNum, pageSize);
+        final JSONObject result = notificationQueryService.getBroadcastNotifications(userId, pageNum, pageSize);
         final List<JSONObject> broadcastNotifications = (List<JSONObject>) result.get(Keys.RESULTS);
 
         dataModel.put(Common.BROADCAST_NOTIFICATIONS, broadcastNotifications);
@@ -807,20 +743,19 @@ public class NotificationProcessor {
         dataModel.put(Pagination.PAGINATION_PAGE_COUNT, pageCount);
         dataModel.put(Pagination.PAGINATION_PAGE_NUMS, pageNums);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Gets unread count of notifications.
      *
      * @param context the specified context
-     * @param request the specified request
      */
-    @RequestProcessing(value = "/notifications/unread/count", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, LoginCheck.class})
-    @After(adviceClass = {StopwatchEndAdvice.class})
-    public void getUnreadNotificationCount(final HTTPRequestContext context, final HttpServletRequest request) {
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+    @RequestProcessing(value = "/notifications/unread/count", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, LoginCheck.class})
+    @After({StopwatchEndAdvice.class})
+    public void getUnreadNotificationCount(final RequestContext context) {
+        final JSONObject currentUser = Sessions.getUser();
         final String userId = currentUser.optString(Keys.OBJECT_ID);
         final Map<String, Object> dataModel = new HashMap<>();
 

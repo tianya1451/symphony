@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -20,14 +20,12 @@ package org.b3log.symphony.processor;
 import org.b3log.latke.Keys;
 import org.b3log.latke.ioc.Inject;
 import org.b3log.latke.logging.Logger;
-import org.b3log.latke.servlet.HTTPRequestContext;
-import org.b3log.latke.servlet.HTTPRequestMethod;
+import org.b3log.latke.servlet.HttpMethod;
+import org.b3log.latke.servlet.RequestContext;
 import org.b3log.latke.servlet.annotation.Before;
 import org.b3log.latke.servlet.annotation.RequestProcessing;
 import org.b3log.latke.servlet.annotation.RequestProcessor;
-import org.b3log.latke.util.Requests;
 import org.b3log.symphony.model.Article;
-import org.b3log.symphony.model.Common;
 import org.b3log.symphony.model.Follow;
 import org.b3log.symphony.model.Notification;
 import org.b3log.symphony.processor.advice.LoginCheck;
@@ -35,6 +33,7 @@ import org.b3log.symphony.processor.advice.PermissionCheck;
 import org.b3log.symphony.service.ArticleQueryService;
 import org.b3log.symphony.service.FollowMgmtService;
 import org.b3log.symphony.service.NotificationMgmtService;
+import org.b3log.symphony.util.Sessions;
 import org.json.JSONObject;
 
 import javax.servlet.http.HttpServletRequest;
@@ -97,17 +96,16 @@ public class FollowProcessor {
      * </p>
      *
      * @param context the specified context
-     * @param request the specified request
-     * @throws Exception exception
      */
-    @RequestProcessing(value = "/follow/user", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = LoginCheck.class)
-    public void followUser(final HTTPRequestContext context, final HttpServletRequest request) throws Exception {
+    @RequestProcessing(value = "/follow/user", method = HttpMethod.POST)
+    @Before(LoginCheck.class)
+    public void followUser(final RequestContext context) {
         context.renderJSON();
 
-        final JSONObject requestJSONObject = Requests.parseRequestJSONObject(request, context.getResponse());
+        final HttpServletRequest request = context.getRequest();
+        final JSONObject requestJSONObject = context.requestJSON();
         final String followingUserId = requestJSONObject.optString(Follow.FOLLOWING_ID);
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject currentUser = Sessions.getUser();
         final String followerUserId = currentUser.optString(Keys.OBJECT_ID);
 
         followMgmtService.followUser(followerUserId, followingUserId);
@@ -137,17 +135,16 @@ public class FollowProcessor {
      * </p>
      *
      * @param context the specified context
-     * @param request the specified request
-     * @throws Exception exception
      */
-    @RequestProcessing(value = "/unfollow/user", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = LoginCheck.class)
-    public void unfollowUser(final HTTPRequestContext context, final HttpServletRequest request) throws Exception {
+    @RequestProcessing(value = "/unfollow/user", method = HttpMethod.POST)
+    @Before(LoginCheck.class)
+    public void unfollowUser(final RequestContext context) {
         context.renderJSON();
 
-        final JSONObject requestJSONObject = Requests.parseRequestJSONObject(request, context.getResponse());
+        final HttpServletRequest request = context.getRequest();
+        final JSONObject requestJSONObject = context.requestJSON();
         final String followingUserId = requestJSONObject.optString(Follow.FOLLOWING_ID);
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject currentUser = Sessions.getUser();
         final String followerUserId = currentUser.optString(Keys.OBJECT_ID);
 
         followMgmtService.unfollowUser(followerUserId, followingUserId);
@@ -167,17 +164,15 @@ public class FollowProcessor {
      * </p>
      *
      * @param context the specified context
-     * @param request the specified request
-     * @throws Exception exception
      */
-    @RequestProcessing(value = "/follow/tag", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = LoginCheck.class)
-    public void followTag(final HTTPRequestContext context, final HttpServletRequest request) throws Exception {
+    @RequestProcessing(value = "/follow/tag", method = HttpMethod.POST)
+    @Before(LoginCheck.class)
+    public void followTag(final RequestContext context) {
         context.renderJSON();
-
-        final JSONObject requestJSONObject = Requests.parseRequestJSONObject(request, context.getResponse());
+        final HttpServletRequest request = context.getRequest();
+        final JSONObject requestJSONObject = context.requestJSON();
         final String followingTagId = requestJSONObject.optString(Follow.FOLLOWING_ID);
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject currentUser = Sessions.getUser();
         final String followerUserId = currentUser.optString(Keys.OBJECT_ID);
 
         followMgmtService.followTag(followerUserId, followingTagId);
@@ -197,17 +192,16 @@ public class FollowProcessor {
      * </p>
      *
      * @param context the specified context
-     * @param request the specified request
-     * @throws Exception exception
      */
-    @RequestProcessing(value = "/unfollow/tag", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = LoginCheck.class)
-    public void unfollowTag(final HTTPRequestContext context, final HttpServletRequest request) throws Exception {
+    @RequestProcessing(value = "/unfollow/tag", method = HttpMethod.POST)
+    @Before(LoginCheck.class)
+    public void unfollowTag(final RequestContext context) {
         context.renderJSON();
 
-        final JSONObject requestJSONObject = Requests.parseRequestJSONObject(request, context.getResponse());
+        final HttpServletRequest request = context.getRequest();
+        final JSONObject requestJSONObject = context.requestJSON();
         final String followingTagId = requestJSONObject.optString(Follow.FOLLOWING_ID);
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject currentUser = Sessions.getUser();
         final String followerUserId = currentUser.optString(Keys.OBJECT_ID);
 
         followMgmtService.unfollowTag(followerUserId, followingTagId);
@@ -227,17 +221,16 @@ public class FollowProcessor {
      * </p>
      *
      * @param context the specified context
-     * @param request the specified request
-     * @throws Exception exception
      */
-    @RequestProcessing(value = "/follow/article", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {LoginCheck.class, PermissionCheck.class})
-    public void followArticle(final HTTPRequestContext context, final HttpServletRequest request) throws Exception {
+    @RequestProcessing(value = "/follow/article", method = HttpMethod.POST)
+    @Before({LoginCheck.class, PermissionCheck.class})
+    public void followArticle(final RequestContext context) {
         context.renderJSON();
 
-        final JSONObject requestJSONObject = Requests.parseRequestJSONObject(request, context.getResponse());
+        final HttpServletRequest request = context.getRequest();
+        final JSONObject requestJSONObject = context.requestJSON();
         final String followingArticleId = requestJSONObject.optString(Follow.FOLLOWING_ID);
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject currentUser = Sessions.getUser();
         final String followerUserId = currentUser.optString(Keys.OBJECT_ID);
 
         followMgmtService.followArticle(followerUserId, followingArticleId);
@@ -271,17 +264,16 @@ public class FollowProcessor {
      * </p>
      *
      * @param context the specified context
-     * @param request the specified request
-     * @throws Exception exception
      */
-    @RequestProcessing(value = "/unfollow/article", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = LoginCheck.class)
-    public void unfollowArticle(final HTTPRequestContext context, final HttpServletRequest request) throws Exception {
+    @RequestProcessing(value = "/unfollow/article", method = HttpMethod.POST)
+    @Before(LoginCheck.class)
+    public void unfollowArticle(final RequestContext context) {
         context.renderJSON();
 
-        final JSONObject requestJSONObject = Requests.parseRequestJSONObject(request, context.getResponse());
+        final HttpServletRequest request = context.getRequest();
+        final JSONObject requestJSONObject = context.requestJSON();
         final String followingArticleId = requestJSONObject.optString(Follow.FOLLOWING_ID);
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject currentUser = Sessions.getUser();
         final String followerUserId = currentUser.optString(Keys.OBJECT_ID);
 
         followMgmtService.unfollowArticle(followerUserId, followingArticleId);
@@ -301,17 +293,16 @@ public class FollowProcessor {
      * </p>
      *
      * @param context the specified context
-     * @param request the specified request
-     * @throws Exception exception
      */
-    @RequestProcessing(value = "/follow/article-watch", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {LoginCheck.class, PermissionCheck.class})
-    public void watchArticle(final HTTPRequestContext context, final HttpServletRequest request) throws Exception {
+    @RequestProcessing(value = "/follow/article-watch", method = HttpMethod.POST)
+    @Before({LoginCheck.class, PermissionCheck.class})
+    public void watchArticle(final RequestContext context) {
         context.renderJSON();
 
-        final JSONObject requestJSONObject = Requests.parseRequestJSONObject(request, context.getResponse());
+        final HttpServletRequest request = context.getRequest();
+        final JSONObject requestJSONObject = context.requestJSON();
         final String followingArticleId = requestJSONObject.optString(Follow.FOLLOWING_ID);
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject currentUser = Sessions.getUser();
         final String followerUserId = currentUser.optString(Keys.OBJECT_ID);
 
         followMgmtService.watchArticle(followerUserId, followingArticleId);
@@ -345,17 +336,16 @@ public class FollowProcessor {
      * </p>
      *
      * @param context the specified context
-     * @param request the specified request
-     * @throws Exception exception
      */
-    @RequestProcessing(value = "/unfollow/article-watch", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = LoginCheck.class)
-    public void unwatchArticle(final HTTPRequestContext context, final HttpServletRequest request) throws Exception {
+    @RequestProcessing(value = "/unfollow/article-watch", method = HttpMethod.POST)
+    @Before(LoginCheck.class)
+    public void unwatchArticle(final RequestContext context) {
         context.renderJSON();
 
-        final JSONObject requestJSONObject = Requests.parseRequestJSONObject(request, context.getResponse());
+        final HttpServletRequest request = context.getRequest();
+        final JSONObject requestJSONObject = context.requestJSON();
         final String followingArticleId = requestJSONObject.optString(Follow.FOLLOWING_ID);
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject currentUser = Sessions.getUser();
         final String followerUserId = currentUser.optString(Keys.OBJECT_ID);
 
         followMgmtService.unwatchArticle(followerUserId, followingArticleId);

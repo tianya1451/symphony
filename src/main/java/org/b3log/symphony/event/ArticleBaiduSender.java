@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -38,7 +38,7 @@ import org.json.JSONObject;
  * Sends an article URL to Baidu.
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
- * @version 1.1.3.2, Aug 2, 2018
+ * @version 1.1.3.4, Jan 12, 2019
  * @since 1.3.0
  */
 @Singleton
@@ -60,11 +60,15 @@ public class ArticleBaiduSender extends AbstractEventListener<JSONObject> {
      * @param urls the specified URLs
      */
     public static void sendToBaidu(final String... urls) {
+        if (Latkes.RuntimeMode.PRODUCTION != Latkes.getRuntimeMode() || StringUtils.isBlank(TOKEN)) {
+            return;
+        }
+
         if (ArrayUtils.isEmpty(urls)) {
             return;
         }
 
-        new Thread(() -> {
+        Symphonys.EXECUTOR_SERVICE.submit(() -> {
             try {
                 final String urlsStr = StringUtils.join(urls, "\n");
                 final HttpResponse response = HttpRequest.post("http://data.zz.baidu.com/urls?site=" + Latkes.getServerHost() + "&token=" + TOKEN).
@@ -77,7 +81,7 @@ public class ArticleBaiduSender extends AbstractEventListener<JSONObject> {
             } catch (final Exception e) {
                 LOGGER.log(Level.ERROR, "Ping Baidu spider failed", e);
             }
-        }).start();
+        });
     }
 
     @Override

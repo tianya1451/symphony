@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -23,20 +23,20 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.time.DateFormatUtils;
 import org.apache.commons.lang.time.DateUtils;
 import org.b3log.latke.Keys;
+import org.b3log.latke.Latkes;
 import org.b3log.latke.ioc.Inject;
 import org.b3log.latke.logging.Level;
 import org.b3log.latke.logging.Logger;
 import org.b3log.latke.model.User;
 import org.b3log.latke.service.LangPropsService;
 import org.b3log.latke.service.ServiceException;
-import org.b3log.latke.servlet.HTTPRequestContext;
-import org.b3log.latke.servlet.HTTPRequestMethod;
+import org.b3log.latke.servlet.HttpMethod;
+import org.b3log.latke.servlet.RequestContext;
 import org.b3log.latke.servlet.annotation.After;
 import org.b3log.latke.servlet.annotation.Before;
 import org.b3log.latke.servlet.annotation.RequestProcessing;
 import org.b3log.latke.servlet.annotation.RequestProcessor;
 import org.b3log.latke.servlet.renderer.AbstractFreeMarkerRenderer;
-import org.b3log.latke.util.Requests;
 import org.b3log.latke.util.Strings;
 import org.b3log.latke.util.TimeZones;
 import org.b3log.symphony.model.*;
@@ -48,10 +48,7 @@ import org.b3log.symphony.processor.advice.validate.UpdateEmotionListValidation;
 import org.b3log.symphony.processor.advice.validate.UpdatePasswordValidation;
 import org.b3log.symphony.processor.advice.validate.UpdateProfilesValidation;
 import org.b3log.symphony.service.*;
-import org.b3log.symphony.util.Languages;
-import org.b3log.symphony.util.Results;
-import org.b3log.symphony.util.Sessions;
-import org.b3log.symphony.util.Symphonys;
+import org.b3log.symphony.util.*;
 import org.json.JSONObject;
 
 import javax.servlet.http.HttpServletRequest;
@@ -62,7 +59,7 @@ import java.util.*;
  * Settings processor.
  * <ul>
  * <li>Shows settings (/settings), GET</li>
- * <li>Shows settings pages (/settings/*), GET</li>
+ * <li>Shows settings pages (/settings/{page}), GET</li>
  * <li>Updates profiles (/settings/profiles), POST</li>
  * <li>Updates user avatar (/settings/avatar), POST</li>
  * <li>Geo status (/settings/geo/status), POST</li>
@@ -82,7 +79,7 @@ import java.util.*;
  * </ul>
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
- * @version 1.3.1.0, Oct 13, 2018
+ * @version 1.3.2.0, Jan 23, 2019
  * @since 2.4.0
  */
 @RequestProcessor
@@ -192,16 +189,16 @@ public class SettingsProcessor {
     /**
      * Deactivates user.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/settings/deactivate", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {LoginCheck.class})
-    public void deactivateUser(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response) {
+    @RequestProcessing(value = "/settings/deactivate", method = HttpMethod.POST)
+    @Before({LoginCheck.class})
+    public void deactivateUser(final RequestContext context) {
         context.renderJSON();
 
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final HttpServletRequest request = context.getRequest();
+        final HttpServletResponse response = context.getResponse();
+        final JSONObject currentUser = Sessions.getUser();
         try {
             userMgmtService.deactivateUser(currentUser.optString(Keys.OBJECT_ID));
             Sessions.logout(currentUser.optString(Keys.OBJECT_ID), response);
@@ -215,16 +212,16 @@ public class SettingsProcessor {
     /**
      * Updates username.
      *
-     * @param context           the specified context
-     * @param request           the specified request
-     * @param requestJSONObject the specified request json object
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/settings/username", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {LoginCheck.class})
-    public void updateUserName(final HTTPRequestContext context, final HttpServletRequest request, final JSONObject requestJSONObject) {
+    @RequestProcessing(value = "/settings/username", method = HttpMethod.POST)
+    @Before({LoginCheck.class})
+    public void updateUserName(final RequestContext context) {
         context.renderJSON();
 
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final HttpServletRequest request = context.getRequest();
+        final JSONObject requestJSONObject = context.requestJSON();
+        final JSONObject currentUser = Sessions.getUser();
         final String userId = currentUser.optString(Keys.OBJECT_ID);
         try {
             if (currentUser.optInt(UserExt.USER_POINT) < Pointtransfer.TRANSFER_SUM_C_CHANGE_USERNAME) {
@@ -251,15 +248,15 @@ public class SettingsProcessor {
     /**
      * Sends email verify code.
      *
-     * @param context           the specified context
-     * @param request           the specified request
-     * @param requestJSONObject the specified request json object
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/settings/email/vc", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {LoginCheck.class})
-    public void sendEmailVC(final HTTPRequestContext context, final HttpServletRequest request, final JSONObject requestJSONObject) {
+    @RequestProcessing(value = "/settings/email/vc", method = HttpMethod.POST)
+    @Before({LoginCheck.class})
+    public void sendEmailVC(final RequestContext context) {
         context.renderJSON();
 
+        final HttpServletRequest request = context.getRequest();
+        final JSONObject requestJSONObject = context.requestJSON();
         final String email = StringUtils.lowerCase(StringUtils.trim(requestJSONObject.optString(User.USER_EMAIL)));
         if (!Strings.isEmail(email)) {
             final String msg = langPropsService.get("sendFailedLabel") + " - " + langPropsService.get("invalidEmailLabel");
@@ -276,7 +273,7 @@ public class SettingsProcessor {
             return;
         }
 
-        final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject user = Sessions.getUser();
         if (email.equalsIgnoreCase(user.optString(User.USER_EMAIL))) {
             final String msg = langPropsService.get("sendFailedLabel") + " - " + langPropsService.get("bindedLabel");
             context.renderMsg(msg);
@@ -319,17 +316,17 @@ public class SettingsProcessor {
     /**
      * Updates email.
      *
-     * @param context           the specified context
-     * @param request           the specified request
-     * @param requestJSONObject the specified request json object
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/settings/email", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {LoginCheck.class})
-    public void updateEmail(final HTTPRequestContext context, final HttpServletRequest request, final JSONObject requestJSONObject) {
+    @RequestProcessing(value = "/settings/email", method = HttpMethod.POST)
+    @Before({LoginCheck.class})
+    public void updateEmail(final RequestContext context) {
         context.renderJSON();
 
+        final HttpServletRequest request = context.getRequest();
+        final JSONObject requestJSONObject = context.requestJSON();
         final String captcha = requestJSONObject.optString(CaptchaProcessor.CAPTCHA);
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject currentUser = Sessions.getUser();
         final String userId = currentUser.optString(Keys.OBJECT_ID);
         try {
             final JSONObject verifycode = verifycodeQueryService.getVerifycodeByUserId(Verifycode.TYPE_C_EMAIL, Verifycode.BIZ_TYPE_C_BIND_EMAIL, userId);
@@ -364,19 +361,17 @@ public class SettingsProcessor {
     /**
      * Updates user i18n.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/settings/i18n", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {LoginCheck.class, CSRFCheck.class})
-    public void updateI18n(final HTTPRequestContext context,
-                           final HttpServletRequest request, final HttpServletResponse response) {
+    @RequestProcessing(value = "/settings/i18n", method = HttpMethod.POST)
+    @Before({LoginCheck.class, CSRFCheck.class})
+    public void updateI18n(final RequestContext context) {
         context.renderJSON();
 
+        final HttpServletRequest request = context.getRequest();
         JSONObject requestJSONObject;
         try {
-            requestJSONObject = Requests.parseRequestJSONObject(request, response);
+            requestJSONObject = context.requestJSON();
             request.setAttribute(Keys.REQUEST, requestJSONObject);
         } catch (final Exception e) {
             LOGGER.warn(e.getMessage());
@@ -395,7 +390,10 @@ public class SettingsProcessor {
         }
 
         try {
-            final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+            JSONObject user = Sessions.getUser();
+            final String userId = user.optString(Keys.OBJECT_ID);
+            user = userQueryService.getUser(userId);
+
             user.put(UserExt.USER_LANGUAGE, userLanguage);
             user.put(UserExt.USER_TIMEZONE, userTimezone);
 
@@ -410,18 +408,18 @@ public class SettingsProcessor {
     /**
      * Shows settings pages.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
+     * @param context the specified context
      */
-    @RequestProcessing(value = {"/settings", "/settings/*"}, method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, LoginCheck.class})
-    @After(adviceClass = {CSRFToken.class, PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showSettings(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response) {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
+    @RequestProcessing(value = {"/settings", "/settings/{page}"}, method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, LoginCheck.class})
+    @After({CSRFToken.class, PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showSettings(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+        final HttpServletResponse response = context.getResponse();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, null);
         context.setRenderer(renderer);
-        final String requestURI = request.getRequestURI();
-        String page = StringUtils.substringAfter(requestURI, "/settings/");
+        String page = context.pathVar("page");
         if (StringUtils.isBlank(page)) {
             page = "profile";
         }
@@ -429,11 +427,10 @@ public class SettingsProcessor {
         renderer.setTemplateName("home/settings/" + page);
         final Map<String, Object> dataModel = renderer.getDataModel();
 
-        final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject user = Sessions.getUser();
         UserProcessor.fillHomeUser(dataModel, user, roleQueryService);
 
-        final int avatarViewMode = (int) request.getAttribute(UserExt.USER_AVATAR_VIEW_MODE);
-        avatarQueryService.fillUserAvatarURL(avatarViewMode, user);
+        avatarQueryService.fillUserAvatarURL(user);
 
         final String userId = user.optString(Keys.OBJECT_ID);
 
@@ -455,7 +452,7 @@ public class SettingsProcessor {
         final long fileMaxSize = Symphonys.getLong("upload.file.maxSize");
         dataModel.put("fileMaxSize", fileMaxSize);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
 
         String inviteTipLabel = (String) dataModel.get("inviteTipLabel");
         inviteTipLabel = inviteTipLabel.replace("{point}", String.valueOf(Pointtransfer.TRANSFER_SUM_C_INVITE_REGISTER));
@@ -494,6 +491,7 @@ public class SettingsProcessor {
 
         dataModel.put(Invitecode.INVITECODES, invitecodes);
 
+        final String requestURI = context.requestURI();
         if (requestURI.contains("function")) {
             dataModel.put(Emotion.EMOTIONS, emotionQueryService.getEmojis(userId));
             dataModel.put(Emotion.SHORT_T_LIST, emojiLists);
@@ -521,19 +519,17 @@ public class SettingsProcessor {
     /**
      * Updates user geo status.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/settings/geo/status", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {LoginCheck.class, CSRFCheck.class})
-    public void updateGeoStatus(final HTTPRequestContext context,
-                                final HttpServletRequest request, final HttpServletResponse response) {
+    @RequestProcessing(value = "/settings/geo/status", method = HttpMethod.POST)
+    @Before({LoginCheck.class, CSRFCheck.class})
+    public void updateGeoStatus(final RequestContext context) {
         context.renderJSON();
 
+        final HttpServletRequest request = context.getRequest();
         JSONObject requestJSONObject;
         try {
-            requestJSONObject = Requests.parseRequestJSONObject(request, response);
+            requestJSONObject = context.requestJSON();
             request.setAttribute(Keys.REQUEST, requestJSONObject);
         } catch (final Exception e) {
             LOGGER.warn(e.getMessage());
@@ -547,7 +543,9 @@ public class SettingsProcessor {
         }
 
         try {
-            final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+            JSONObject user = Sessions.getUser();
+            final String userId = user.optString(Keys.OBJECT_ID);
+            user = userQueryService.getUser(userId);
             user.put(UserExt.USER_GEO_STATUS, geoStatus);
 
             userMgmtService.updateUser(user.optString(Keys.OBJECT_ID), user);
@@ -561,18 +559,17 @@ public class SettingsProcessor {
     /**
      * Updates user privacy.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/settings/privacy", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {LoginCheck.class, CSRFCheck.class})
-    public void updatePrivacy(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response) {
+    @RequestProcessing(value = "/settings/privacy", method = HttpMethod.POST)
+    @Before({LoginCheck.class, CSRFCheck.class})
+    public void updatePrivacy(final RequestContext context) {
         context.renderJSON();
 
+        final HttpServletRequest request = context.getRequest();
         JSONObject requestJSONObject;
         try {
-            requestJSONObject = Requests.parseRequestJSONObject(request, response);
+            requestJSONObject = context.requestJSON();
             request.setAttribute(Keys.REQUEST, requestJSONObject);
         } catch (final Exception e) {
             LOGGER.warn(e.getMessage());
@@ -594,34 +591,23 @@ public class SettingsProcessor {
         final boolean userJoinPointRank = requestJSONObject.optBoolean(UserExt.USER_JOIN_POINT_RANK);
         final boolean userJoinUsedPointRank = requestJSONObject.optBoolean(UserExt.USER_JOIN_USED_POINT_RANK);
 
-        final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        JSONObject user = Sessions.getUser();
+        final String userId = user.optString(Keys.OBJECT_ID);
+        user = userQueryService.getUser(userId);
 
-        user.put(UserExt.USER_ONLINE_STATUS, onlineStatus
-                ? UserExt.USER_XXX_STATUS_C_PUBLIC : UserExt.USER_XXX_STATUS_C_PRIVATE);
-        user.put(UserExt.USER_ARTICLE_STATUS, articleStatus
-                ? UserExt.USER_XXX_STATUS_C_PUBLIC : UserExt.USER_XXX_STATUS_C_PRIVATE);
-        user.put(UserExt.USER_COMMENT_STATUS, commentStatus
-                ? UserExt.USER_XXX_STATUS_C_PUBLIC : UserExt.USER_XXX_STATUS_C_PRIVATE);
-        user.put(UserExt.USER_FOLLOWING_USER_STATUS, followingUserStatus
-                ? UserExt.USER_XXX_STATUS_C_PUBLIC : UserExt.USER_XXX_STATUS_C_PRIVATE);
-        user.put(UserExt.USER_FOLLOWING_TAG_STATUS, followingTagStatus
-                ? UserExt.USER_XXX_STATUS_C_PUBLIC : UserExt.USER_XXX_STATUS_C_PRIVATE);
-        user.put(UserExt.USER_FOLLOWING_ARTICLE_STATUS, followingArticleStatus
-                ? UserExt.USER_XXX_STATUS_C_PUBLIC : UserExt.USER_XXX_STATUS_C_PRIVATE);
-        user.put(UserExt.USER_WATCHING_ARTICLE_STATUS, watchingArticleStatus
-                ? UserExt.USER_XXX_STATUS_C_PUBLIC : UserExt.USER_XXX_STATUS_C_PRIVATE);
-        user.put(UserExt.USER_FOLLOWER_STATUS, followerStatus
-                ? UserExt.USER_XXX_STATUS_C_PUBLIC : UserExt.USER_XXX_STATUS_C_PRIVATE);
-        user.put(UserExt.USER_BREEZEMOON_STATUS, breezemoonStatus
-                ? UserExt.USER_XXX_STATUS_C_PUBLIC : UserExt.USER_XXX_STATUS_C_PRIVATE);
-        user.put(UserExt.USER_POINT_STATUS, pointStatus
-                ? UserExt.USER_XXX_STATUS_C_PUBLIC : UserExt.USER_XXX_STATUS_C_PRIVATE);
-        user.put(UserExt.USER_UA_STATUS, uaStatus
-                ? UserExt.USER_XXX_STATUS_C_PUBLIC : UserExt.USER_XXX_STATUS_C_PRIVATE);
-        user.put(UserExt.USER_JOIN_POINT_RANK, userJoinPointRank
-                ? UserExt.USER_JOIN_POINT_RANK_C_JOIN : UserExt.USER_JOIN_POINT_RANK_C_NOT_JOIN);
-        user.put(UserExt.USER_JOIN_USED_POINT_RANK, userJoinUsedPointRank
-                ? UserExt.USER_JOIN_USED_POINT_RANK_C_JOIN : UserExt.USER_JOIN_USED_POINT_RANK_C_NOT_JOIN);
+        user.put(UserExt.USER_ONLINE_STATUS, onlineStatus ? UserExt.USER_XXX_STATUS_C_PUBLIC : UserExt.USER_XXX_STATUS_C_PRIVATE);
+        user.put(UserExt.USER_ARTICLE_STATUS, articleStatus ? UserExt.USER_XXX_STATUS_C_PUBLIC : UserExt.USER_XXX_STATUS_C_PRIVATE);
+        user.put(UserExt.USER_COMMENT_STATUS, commentStatus ? UserExt.USER_XXX_STATUS_C_PUBLIC : UserExt.USER_XXX_STATUS_C_PRIVATE);
+        user.put(UserExt.USER_FOLLOWING_USER_STATUS, followingUserStatus ? UserExt.USER_XXX_STATUS_C_PUBLIC : UserExt.USER_XXX_STATUS_C_PRIVATE);
+        user.put(UserExt.USER_FOLLOWING_TAG_STATUS, followingTagStatus ? UserExt.USER_XXX_STATUS_C_PUBLIC : UserExt.USER_XXX_STATUS_C_PRIVATE);
+        user.put(UserExt.USER_FOLLOWING_ARTICLE_STATUS, followingArticleStatus ? UserExt.USER_XXX_STATUS_C_PUBLIC : UserExt.USER_XXX_STATUS_C_PRIVATE);
+        user.put(UserExt.USER_WATCHING_ARTICLE_STATUS, watchingArticleStatus ? UserExt.USER_XXX_STATUS_C_PUBLIC : UserExt.USER_XXX_STATUS_C_PRIVATE);
+        user.put(UserExt.USER_FOLLOWER_STATUS, followerStatus ? UserExt.USER_XXX_STATUS_C_PUBLIC : UserExt.USER_XXX_STATUS_C_PRIVATE);
+        user.put(UserExt.USER_BREEZEMOON_STATUS, breezemoonStatus ? UserExt.USER_XXX_STATUS_C_PUBLIC : UserExt.USER_XXX_STATUS_C_PRIVATE);
+        user.put(UserExt.USER_POINT_STATUS, pointStatus ? UserExt.USER_XXX_STATUS_C_PUBLIC : UserExt.USER_XXX_STATUS_C_PRIVATE);
+        user.put(UserExt.USER_UA_STATUS, uaStatus ? UserExt.USER_XXX_STATUS_C_PUBLIC : UserExt.USER_XXX_STATUS_C_PRIVATE);
+        user.put(UserExt.USER_JOIN_POINT_RANK, userJoinPointRank ? UserExt.USER_JOIN_XXX_C_JOIN : UserExt.USER_JOIN_XXX_C_NOT_JOIN);
+        user.put(UserExt.USER_JOIN_USED_POINT_RANK, userJoinUsedPointRank ? UserExt.USER_JOIN_XXX_C_JOIN : UserExt.USER_JOIN_XXX_C_NOT_JOIN);
 
         try {
             userMgmtService.updateUser(user.optString(Keys.OBJECT_ID), user);
@@ -635,18 +621,17 @@ public class SettingsProcessor {
     /**
      * Updates user function.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/settings/function", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {LoginCheck.class, CSRFCheck.class})
-    public void updateFunction(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response) {
+    @RequestProcessing(value = "/settings/function", method = HttpMethod.POST)
+    @Before({LoginCheck.class, CSRFCheck.class})
+    public void updateFunction(final RequestContext context) {
         context.renderJSON();
 
+        final HttpServletRequest request = context.getRequest();
         JSONObject requestJSONObject;
         try {
-            requestJSONObject = Requests.parseRequestJSONObject(request, response);
+            requestJSONObject = context.requestJSON();
             request.setAttribute(Keys.REQUEST, requestJSONObject);
         } catch (final Exception e) {
             LOGGER.warn(e.getMessage());
@@ -663,23 +648,42 @@ public class SettingsProcessor {
         final boolean keyboardShortcutsStatus = requestJSONObject.optBoolean(UserExt.USER_KEYBOARD_SHORTCUTS_STATUS);
         final boolean userReplyWatchArticleStatus = requestJSONObject.optBoolean(UserExt.USER_REPLY_WATCH_ARTICLE_STATUS);
         final boolean forwardStatus = requestJSONObject.optBoolean(UserExt.USER_FORWARD_PAGE_STATUS);
+        String indexRedirectURL = requestJSONObject.optString(UserExt.USER_INDEX_REDIRECT_URL);
+        if (!Strings.isURL(indexRedirectURL)) {
+            indexRedirectURL = "";
+        }
+        if (StringUtils.isNotBlank(indexRedirectURL) && !StringUtils.startsWith(indexRedirectURL, Latkes.getServePath())) {
+            context.renderMsg(langPropsService.get("onlyInternalURLLabel"));
+
+            return;
+        }
+        if (StringUtils.isNotBlank(indexRedirectURL)) {
+            String tmp = StringUtils.substringBefore(indexRedirectURL, "?");
+            if (StringUtils.endsWith(tmp, "/")) {
+                tmp = StringUtils.substringBeforeLast(tmp, "/");
+            }
+            if (StringUtils.equalsIgnoreCase(tmp, Latkes.getServePath())) {
+                indexRedirectURL = "";
+            }
+        }
 
         int userListPageSize;
         try {
             userListPageSize = Integer.valueOf(userListPageSizeStr);
-
             if (10 > userListPageSize) {
                 userListPageSize = 10;
             }
-
-            if (userListPageSize > 60) {
-                userListPageSize = 60;
+            if (userListPageSize > 96) {
+                userListPageSize = 96;
             }
         } catch (final Exception e) {
             userListPageSize = Symphonys.getInt("indexArticlesCnt");
         }
 
-        final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        JSONObject user = Sessions.getUser();
+        final String userId = user.optString(Keys.OBJECT_ID);
+        user = userQueryService.getUser(userId);
+
         user.put(UserExt.USER_LIST_PAGE_SIZE, userListPageSize);
         user.put(UserExt.USER_COMMENT_VIEW_MODE, userCommentViewMode);
         user.put(UserExt.USER_AVATAR_VIEW_MODE, userAvatarViewMode);
@@ -689,6 +693,7 @@ public class SettingsProcessor {
         user.put(UserExt.USER_KEYBOARD_SHORTCUTS_STATUS, keyboardShortcutsStatus ? UserExt.USER_XXX_STATUS_C_ENABLED : UserExt.USER_XXX_STATUS_C_DISABLED);
         user.put(UserExt.USER_REPLY_WATCH_ARTICLE_STATUS, userReplyWatchArticleStatus ? UserExt.USER_XXX_STATUS_C_ENABLED : UserExt.USER_XXX_STATUS_C_DISABLED);
         user.put(UserExt.USER_FORWARD_PAGE_STATUS, forwardStatus ? UserExt.USER_XXX_STATUS_C_ENABLED : UserExt.USER_XXX_STATUS_C_DISABLED);
+        user.put(UserExt.USER_INDEX_REDIRECT_URL, indexRedirectURL);
 
         try {
             userMgmtService.updateUser(user.optString(Keys.OBJECT_ID), user);
@@ -702,24 +707,22 @@ public class SettingsProcessor {
     /**
      * Updates user profiles.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/settings/profiles", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {LoginCheck.class, CSRFCheck.class, UpdateProfilesValidation.class})
-    public void updateProfiles(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response) {
+    @RequestProcessing(value = "/settings/profiles", method = HttpMethod.POST)
+    @Before({LoginCheck.class, CSRFCheck.class, UpdateProfilesValidation.class})
+    public void updateProfiles(final RequestContext context) {
         context.renderJSON();
-
-        final JSONObject requestJSONObject = (JSONObject) request.getAttribute(Keys.REQUEST);
-
+        final JSONObject requestJSONObject = (JSONObject) context.attr(Keys.REQUEST);
         final String userTags = requestJSONObject.optString(UserExt.USER_TAGS);
         final String userURL = requestJSONObject.optString(User.USER_URL);
         final String userQQ = requestJSONObject.optString(UserExt.USER_QQ);
-        final String userIntro = requestJSONObject.optString(UserExt.USER_INTRO);
-        final String userNickname = requestJSONObject.optString(UserExt.USER_NICKNAME);
+        String userIntro = StringUtils.trim(requestJSONObject.optString(UserExt.USER_INTRO));
+        userIntro = Escapes.escapeHTML(userIntro);
+        String userNickname = StringUtils.trim(requestJSONObject.optString(UserExt.USER_NICKNAME));
+        userNickname = Escapes.escapeHTML(userNickname);
 
-        final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject user = Sessions.getUser();
         user.put(UserExt.USER_TAGS, userTags);
         user.put(User.USER_URL, userURL);
         user.put(UserExt.USER_QQ, userQQ);
@@ -739,21 +742,18 @@ public class SettingsProcessor {
     /**
      * Updates user avatar.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/settings/avatar", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {LoginCheck.class, CSRFCheck.class, UpdateProfilesValidation.class})
-    public void updateAvatar(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
+    @RequestProcessing(value = "/settings/avatar", method = HttpMethod.POST)
+    @Before({LoginCheck.class, CSRFCheck.class, UpdateProfilesValidation.class})
+    public void updateAvatar(final RequestContext context) {
         context.renderJSON();
 
-        final JSONObject requestJSONObject = (JSONObject) request.getAttribute(Keys.REQUEST);
+        final HttpServletRequest request = context.getRequest();
+        final JSONObject requestJSONObject = (JSONObject) context.attr(Keys.REQUEST);
         final String userAvatarURL = requestJSONObject.optString(UserExt.USER_AVATAR_URL);
 
-        JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        JSONObject user = Sessions.getUser();
         final String userId = user.optString(Keys.OBJECT_ID);
         user = userQueryService.getUser(userId);
         user.put(UserExt.USER_AVATAR_TYPE, UserExt.USER_AVATAR_TYPE_C_UPLOAD);
@@ -787,21 +787,20 @@ public class SettingsProcessor {
     /**
      * Updates user password.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/settings/password", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {LoginCheck.class, CSRFCheck.class, UpdatePasswordValidation.class})
-    public void updatePassword(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response) {
+    @RequestProcessing(value = "/settings/password", method = HttpMethod.POST)
+    @Before({LoginCheck.class, CSRFCheck.class, UpdatePasswordValidation.class})
+    public void updatePassword(final RequestContext context) {
         context.renderJSON();
 
-        final JSONObject requestJSONObject = (JSONObject) request.getAttribute(Keys.REQUEST);
+        final HttpServletRequest request = context.getRequest();
+        final JSONObject requestJSONObject = (JSONObject) context.attr(Keys.REQUEST);
 
         final String password = requestJSONObject.optString(User.USER_PASSWORD);
         final String newPassword = requestJSONObject.optString(User.USER_NEW_PASSWORD);
 
-        final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject user = Sessions.getUser();
         if (!password.equals(user.optString(User.USER_PASSWORD))) {
             context.renderMsg(langPropsService.get("invalidOldPwdLabel"));
 
@@ -824,19 +823,18 @@ public class SettingsProcessor {
     /**
      * Updates user emotions.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/settings/emotionList", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {LoginCheck.class, CSRFCheck.class, UpdateEmotionListValidation.class})
-    public void updateEmoji(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response) {
+    @RequestProcessing(value = "/settings/emotionList", method = HttpMethod.POST)
+    @Before({LoginCheck.class, CSRFCheck.class, UpdateEmotionListValidation.class})
+    public void updateEmoji(final RequestContext context) {
         context.renderJSON();
 
-        final JSONObject requestJSONObject = (JSONObject) request.getAttribute(Keys.REQUEST);
+        final HttpServletRequest request = context.getRequest();
+        final JSONObject requestJSONObject = (JSONObject) context.attr(Keys.REQUEST);
         final String emotionList = requestJSONObject.optString(Emotion.EMOTIONS);
 
-        final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject user = Sessions.getUser();
         try {
             emotionMgmtService.setEmotionList(user.optString(Keys.OBJECT_ID), emotionList);
 
@@ -853,21 +851,20 @@ public class SettingsProcessor {
      * Point transfer.
      *
      * @param context the specified context
-     * @param request the specified request
-     * @throws Exception exception
      */
-    @RequestProcessing(value = "/point/transfer", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {LoginCheck.class, CSRFCheck.class, PointTransferValidation.class})
-    public void pointTransfer(final HTTPRequestContext context, final HttpServletRequest request) throws Exception {
+    @RequestProcessing(value = "/point/transfer", method = HttpMethod.POST)
+    @Before({LoginCheck.class, CSRFCheck.class, PointTransferValidation.class})
+    public void pointTransfer(final RequestContext context) {
         final JSONObject ret = Results.falseResult();
         context.renderJSON(ret);
 
-        final JSONObject requestJSONObject = (JSONObject) request.getAttribute(Keys.REQUEST);
+        final HttpServletRequest request = context.getRequest();
+        final JSONObject requestJSONObject = (JSONObject) context.attr(Keys.REQUEST);
 
         final int amount = requestJSONObject.optInt(Common.AMOUNT);
-        final JSONObject toUser = (JSONObject) request.getAttribute(Common.TO_USER);
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
-        String memo = (String) request.getAttribute(Pointtransfer.MEMO);
+        final JSONObject toUser = (JSONObject) context.attr(Common.TO_USER);
+        final JSONObject currentUser = Sessions.getUser();
+        String memo = (String) context.attr(Pointtransfer.MEMO);
         if (StringUtils.isBlank(memo)) {
             memo = "";
         }
@@ -894,15 +891,14 @@ public class SettingsProcessor {
      * Queries invitecode state.
      *
      * @param context the specified context
-     * @param request the specified request
      */
-    @RequestProcessing(value = "/invitecode/state", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {LoginCheck.class, CSRFCheck.class})
-    public void queryInvitecode(final HTTPRequestContext context, final HttpServletRequest request) {
+    @RequestProcessing(value = "/invitecode/state", method = HttpMethod.POST)
+    @Before({LoginCheck.class, CSRFCheck.class})
+    public void queryInvitecode(final RequestContext context) {
         final JSONObject ret = Results.falseResult();
         context.renderJSON(ret);
 
-        final JSONObject requestJSONObject = Requests.parseRequestJSONObject(request, context.getResponse());
+        final JSONObject requestJSONObject = context.requestJSON();
         String invitecode = requestJSONObject.optString(Invitecode.INVITECODE);
         if (StringUtils.isBlank(invitecode)) {
             ret.put(Keys.STATUS_CODE, -1);
@@ -949,20 +945,20 @@ public class SettingsProcessor {
      * Point buy invitecode.
      *
      * @param context the specified context
-     * @param request the specified request
      */
-    @RequestProcessing(value = "/point/buy-invitecode", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {LoginCheck.class, CSRFCheck.class, PermissionCheck.class})
-    public void pointBuy(final HTTPRequestContext context, final HttpServletRequest request) {
+    @RequestProcessing(value = "/point/buy-invitecode", method = HttpMethod.POST)
+    @Before({LoginCheck.class, CSRFCheck.class, PermissionCheck.class})
+    public void pointBuy(final RequestContext context) {
         final JSONObject ret = Results.falseResult();
         context.renderJSON(ret);
 
+        final HttpServletRequest request = context.getRequest();
         final String allowRegister = optionQueryService.getAllowRegister();
         if (!"2".equals(allowRegister)) {
             return;
         }
 
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject currentUser = Sessions.getUser();
         final String fromId = currentUser.optString(Keys.OBJECT_ID);
         final String userName = currentUser.optString(User.USER_NAME);
 
@@ -990,14 +986,14 @@ public class SettingsProcessor {
      * Exports posts(article/comment) to a file.
      *
      * @param context the specified context
-     * @param request the specified request
      */
-    @RequestProcessing(value = "/export/posts", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {LoginCheck.class})
-    public void exportPosts(final HTTPRequestContext context, final HttpServletRequest request) {
+    @RequestProcessing(value = "/export/posts", method = HttpMethod.POST)
+    @Before({LoginCheck.class})
+    public void exportPosts(final RequestContext context) {
         context.renderJSON();
 
-        final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final HttpServletRequest request = context.getRequest();
+        final JSONObject user = Sessions.getUser();
         final String userId = user.optString(Keys.OBJECT_ID);
 
         final String downloadURL = postExportService.exportPosts(userId);

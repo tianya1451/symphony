@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -21,10 +21,20 @@ package org.b3log.symphony.model;
  * This class defines all common model relevant keys.
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
- * @version 1.73.0.1, Sep 14, 2018
+ * @version 1.73.0.6, Jan 21, 2019
  * @since 0.2.0
  */
 public final class Common {
+
+    /**
+     * Lock.
+     */
+    public static final String LOCK = "lock";
+
+    /**
+     * Key of is single breezemoon page URL.
+     */
+    public static final String IS_SINGLE_BREEZEMOON_URL = "isSingleBreezemoonURL";
 
     /**
      * Key of offered.
@@ -67,11 +77,6 @@ public final class Common {
     public static final String DATA = "data";
 
     /**
-     * Key of ISBN.
-     */
-    public static final String ISBN = "ISBN";
-
-    /**
      * Key of mans.
      */
     public static final String MANS = "mans";
@@ -95,16 +100,6 @@ public final class Common {
      * Key of requisite message.
      */
     public static final String REQUISITE_MSG = "requisiteMsg";
-
-    /**
-     * Key of following user articles.
-     */
-    public static final String FOLLOWING_USER_ARTICLES = "followingUserArticles";
-
-    /**
-     * Key of following tag articles.
-     */
-    public static final String FOLLOWING_TAG_ARTICLES = "followingTagArticles";
 
     /**
      * Key of command.
@@ -142,19 +137,9 @@ public final class Common {
     public static final String NAME = "name";
 
     /**
-     * Key of language.
-     */
-    public static final String LANGUAGE = "language";
-
-    /**
      * Key of languages.
      */
     public static final String LANGUAGES = "languages";
-
-    /**
-     * Key of timezone.
-     */
-    public static final String TIMEZONE = "timezone";
 
     /**
      * Key of timezones.
@@ -165,11 +150,6 @@ public final class Common {
      * Key of selected.
      */
     public static final String SELECTED = "selected";
-
-    /**
-     * Key of last modified.
-     */
-    public static final String LAST_MOD = "lastModified";
 
     /**
      * Key of invited user count.
@@ -312,11 +292,6 @@ public final class Common {
     public static final String PROVINCE = "province";
 
     /**
-     * Key of new user.
-     */
-    public static final String NEW_USER = "newUser";
-
-    /**
      * Key of is reserved.
      */
     public static final String IS_RESERVED = "isReserved";
@@ -325,16 +300,6 @@ public final class Common {
      * Key of data id.
      */
     public static final String DATA_ID = "dataId";
-
-    /**
-     * Key of data title.
-     */
-    public static final String DATA_TITLE = "dataTitle";
-
-    /**
-     * Key of data link.
-     */
-    public static final String DATA_LINK = "dataLink";
 
     /**
      * Key of memo.
@@ -402,11 +367,6 @@ public final class Common {
     public static final String IS_DAILY_CHECKIN = "isDailyCheckin";
 
     /**
-     * Key of use captcha checkin.
-     */
-    public static final String USE_CAPTCHA_CHECKIN = "useCaptchaCheckin";
-
-    /**
      * Key of mini postfix.
      */
     public static final String MINI_POSTFIX = "miniPostfix";
@@ -472,11 +432,6 @@ public final class Common {
     public static final String TYPE = "type";
 
     /**
-     * Key of activity.
-     */
-    public static final String ACTIVITY = "activity";
-
-    /**
      * Key of recent articles.
      */
     public static final String RECENT_ARTICLES = "recentArticles";
@@ -507,11 +462,6 @@ public final class Common {
     public static final String WATCHING_BREEZEMOONS = "watchingBreezemoons";
 
     /**
-     * Key of hot articles.
-     */
-    public static final String HOT_ARTICLES = "hotArticles";
-
-    /**
      * Key of hot.
      */
     public static final String HOT = "hot";
@@ -530,6 +480,11 @@ public final class Common {
      * Key of side tags.
      */
     public static final String SIDE_TAGS = "sideTags";
+
+    /**
+     * Key of side breezemoons.
+     */
+    public static final String SIDE_BREEZEMOONS = "sideBreezemoons";
 
     /**
      * Key of navigation trend tags.
@@ -692,11 +647,6 @@ public final class Common {
     public static final String UNREAD_FOLLOWING_NOTIFICATION_CNT = "unreadFollowingNotificationCnt";
 
     /**
-     * Key of follower user count.
-     */
-    public static final String FOLLOWER_USER_CNT = "followerUserCnt";
-
-    /**
      * Key of following user count.
      */
     public static final String FOLLOWING_USER_CNT = "followingUserCnt";
@@ -717,21 +667,6 @@ public final class Common {
     public static final String AUTHOR_NAME = "authorName";
 
     /**
-     * Key of author email.
-     */
-    public static final String AUTHOR_EMAIL = "authorEmail";
-
-    /**
-     * Key of author URL.
-     */
-    public static final String AUTHOR_URL = "authorURL";
-
-    /**
-     * Key of author avatar URL.
-     */
-    public static final String AUTHOR_AVATAR_URL = "authorAvatarURL";
-
-    /**
      * Key of UA.
      */
     public static final String UA = "ua";
@@ -740,16 +675,6 @@ public final class Common {
      * Key of IP.
      */
     public static final String IP = "ip";
-
-    /**
-     * Key of content HTML.
-     */
-    public static final String CONTENT_HTML = "contentHTML";
-
-    /**
-     * Key of is article author.
-     */
-    public static final String IS_ARTICLE_AUTHOR = "isArticleAuthor";
 
     /**
      * Key of content.
@@ -847,11 +772,6 @@ public final class Common {
     public static final String DB_CONN_CNT = "dbConnCnt";
 
     /**
-     * Key of symphony key.
-     */
-    public static final String SYMPHONY_KEY = "symphonyKey";
-
-    /**
      * Key of article comments page size.
      */
     public static final String ARTICLE_COMMENTS_PAGE_SIZE = "articleCommentsPageSize";
@@ -900,11 +820,6 @@ public final class Common {
      * Key of balance.
      */
     public static final String BALANCE = "balance";
-
-    /**
-     * Key of plus.
-     */
-    public static final String PLAUS = "plus";
 
     /**
      * Key of referral.

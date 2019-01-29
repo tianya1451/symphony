@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -23,20 +23,19 @@ import org.b3log.latke.ioc.Inject;
 import org.b3log.latke.ioc.Singleton;
 import org.b3log.latke.model.User;
 import org.b3log.latke.service.LangPropsService;
-import org.b3log.latke.servlet.HTTPRequestContext;
-import org.b3log.latke.servlet.advice.BeforeRequestProcessAdvice;
+import org.b3log.latke.servlet.RequestContext;
+import org.b3log.latke.servlet.advice.ProcessAdvice;
 import org.b3log.latke.servlet.advice.RequestProcessAdviceException;
-import org.b3log.latke.util.Requests;
 import org.b3log.symphony.model.Common;
 import org.b3log.symphony.model.Role;
 import org.b3log.symphony.model.UserExt;
 import org.b3log.symphony.service.OptionQueryService;
 import org.b3log.symphony.service.UserQueryService;
+import org.b3log.symphony.util.Sessions;
 import org.b3log.symphony.util.Symphonys;
 import org.json.JSONObject;
 
 import javax.servlet.http.HttpServletRequest;
-import java.util.Map;
 
 /**
  * Validates for chat message adding.
@@ -46,7 +45,7 @@ import java.util.Map;
  * @since 1.4.0
  */
 @Singleton
-public class ChatMsgAddValidation extends BeforeRequestProcessAdvice {
+public class ChatMsgAddValidation extends ProcessAdvice {
 
     /**
      * Language service.
@@ -72,15 +71,15 @@ public class ChatMsgAddValidation extends BeforeRequestProcessAdvice {
     public static final int MAX_CONTENT_LENGTH = 2000;
 
     @Override
-    public void doAdvice(final HTTPRequestContext context, final Map<String, Object> args) throws RequestProcessAdviceException {
+    public void doAdvice(final RequestContext context) throws RequestProcessAdviceException {
         final HttpServletRequest request = context.getRequest();
 
         JSONObject requestJSONObject;
         try {
-            requestJSONObject = Requests.parseRequestJSONObject(request, context.getResponse());
+            requestJSONObject = context.requestJSON();
             request.setAttribute(Keys.REQUEST, requestJSONObject);
 
-            final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+            final JSONObject currentUser = Sessions.getUser();
             if (System.currentTimeMillis() - currentUser.optLong(UserExt.USER_LATEST_CMT_TIME) < Symphonys.getLong("minStepChatTime")
                     && !Role.ROLE_ID_C_ADMIN.equals(currentUser.optString(User.USER_ROLE))) {
                 throw new Exception(langPropsService.get("tooFrequentCmtLabel"));

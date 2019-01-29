@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -22,8 +22,8 @@ import org.b3log.latke.ioc.Inject;
 import org.b3log.latke.logging.Logger;
 import org.b3log.latke.model.Pagination;
 import org.b3log.latke.service.LangPropsService;
-import org.b3log.latke.servlet.HTTPRequestContext;
-import org.b3log.latke.servlet.HTTPRequestMethod;
+import org.b3log.latke.servlet.HttpMethod;
+import org.b3log.latke.servlet.RequestContext;
 import org.b3log.latke.servlet.annotation.After;
 import org.b3log.latke.servlet.annotation.Before;
 import org.b3log.latke.servlet.annotation.RequestProcessing;
@@ -42,6 +42,7 @@ import org.b3log.symphony.service.DataModelService;
 import org.b3log.symphony.service.SearchQueryService;
 import org.b3log.symphony.service.UserQueryService;
 import org.b3log.symphony.util.Escapes;
+import org.b3log.symphony.util.Sessions;
 import org.b3log.symphony.util.Symphonys;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -103,28 +104,24 @@ public class SearchProcessor {
     /**
      * Searches.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/search", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, AnonymousViewCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void search(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("search-articles.ftl");
+    @RequestProcessing(value = "/search", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, AnonymousViewCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void search(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "search-articles.ftl");
 
         if (!Symphonys.getBoolean("es.enabled") && !Symphonys.getBoolean("algolia.enabled")) {
-            response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            context.sendError(HttpServletResponse.SC_NOT_FOUND);
 
             return;
         }
 
         final Map<String, Object> dataModel = renderer.getDataModel();
-        String keyword = request.getParameter("key");
+        String keyword = context.param("key");
         if (StringUtils.isBlank(keyword)) {
             keyword = "";
         }
@@ -132,7 +129,7 @@ public class SearchProcessor {
 
         final int pageNum = Paginator.getPage(request);
         int pageSize = Symphonys.getInt("indexArticlesCnt");
-        final JSONObject user = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject user = Sessions.getUser();
         if (null != user) {
             pageSize = user.optInt(UserExt.USER_LIST_PAGE_SIZE);
         }
@@ -142,7 +139,7 @@ public class SearchProcessor {
         if (Symphonys.getBoolean("es.enabled")) {
             final JSONObject result = searchQueryService.searchElasticsearch(Article.ARTICLE, keyword, pageNum, pageSize);
             if (null == result || 0 != result.optInt("status")) {
-                response.sendError(HttpServletResponse.SC_NOT_FOUND);
+                context.sendError(HttpServletResponse.SC_NOT_FOUND);
 
                 return;
             }
@@ -161,7 +158,7 @@ public class SearchProcessor {
         if (Symphonys.getBoolean("algolia.enabled")) {
             final JSONObject result = searchQueryService.searchAlgolia(keyword, pageNum, pageSize);
             if (null == result) {
-                response.sendError(HttpServletResponse.SC_NOT_FOUND);
+                context.sendError(HttpServletResponse.SC_NOT_FOUND);
 
                 return;
             }
@@ -179,11 +176,9 @@ public class SearchProcessor {
             }
         }
 
-        final int avatarViewMode = (int) request.getAttribute(UserExt.USER_AVATAR_VIEW_MODE);
-
-        articleQueryService.organizeArticles(avatarViewMode, articles);
+        articleQueryService.organizeArticles(articles);
         final Integer participantsCnt = Symphonys.getInt("latestArticleParticipantsCnt");
-        articleQueryService.genParticipants(avatarViewMode, articles, participantsCnt);
+        articleQueryService.genParticipants(articles, participantsCnt);
 
         dataModel.put(Article.ARTICLES, articles);
 
@@ -198,7 +193,7 @@ public class SearchProcessor {
         dataModel.put(Pagination.PAGINATION_PAGE_COUNT, pageCount);
         dataModel.put(Pagination.PAGINATION_PAGE_NUMS, pageNums);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
         dataModelService.fillRandomArticles(dataModel);
         dataModelService.fillSideHotArticles(dataModel);
         dataModelService.fillSideTags(dataModel);

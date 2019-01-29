@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -20,7 +20,6 @@ package org.b3log.symphony.service;
 import org.apache.commons.lang.StringUtils;
 import org.b3log.latke.Keys;
 import org.b3log.latke.event.Event;
-import org.b3log.latke.event.EventException;
 import org.b3log.latke.event.EventManager;
 import org.b3log.latke.ioc.Inject;
 import org.b3log.latke.logging.Level;
@@ -48,7 +47,7 @@ import java.util.Locale;
  * Comment management service.
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
- * @version 2.15.0.0, Aug 28, 2018
+ * @version 2.15.0.3, Jan 12, 2019
  * @since 0.2.0
  */
 @Service
@@ -332,6 +331,12 @@ public class CommentMgmtService {
                 }
             }
 
+            final int thankCnt = comment.optInt(Comment.COMMENT_THANK_CNT);
+            comment.put(Comment.COMMENT_THANK_CNT, thankCnt + 1);
+            final Transaction transaction = commentRepository.beginTransaction();
+            commentRepository.update(commentId, comment);
+            transaction.commit();
+
             final JSONObject reward = new JSONObject();
             reward.put(Keys.OBJECT_ID, rewardId);
             reward.put(Reward.SENDER_ID, senderId);
@@ -526,6 +531,7 @@ public class CommentMgmtService {
             commenter.put(UserExt.USER_LATEST_CMT_TIME, currentTimeMillis);
             userRepository.update(commenter.optString(Keys.OBJECT_ID), commenter);
 
+            comment.put(Comment.COMMENT_THANK_CNT, 0);
             comment.put(Comment.COMMENT_GOOD_CNT, 0);
             comment.put(Comment.COMMENT_BAD_CNT, 0);
             comment.put(Comment.COMMENT_SCORE, 0D);
@@ -548,14 +554,11 @@ public class CommentMgmtService {
             // Revision
             final JSONObject revision = new JSONObject();
             revision.put(Revision.REVISION_AUTHOR_ID, comment.optString(Comment.COMMENT_AUTHOR_ID));
-
             final JSONObject revisionData = new JSONObject();
             revisionData.put(Comment.COMMENT_CONTENT, content);
-
             revision.put(Revision.REVISION_DATA, revisionData.toString());
             revision.put(Revision.REVISION_DATA_ID, commentId);
             revision.put(Revision.REVISION_DATA_TYPE, Revision.DATA_TYPE_C_COMMENT);
-
             revisionRepository.add(revision);
 
             transaction.commit();
@@ -583,12 +586,7 @@ public class CommentMgmtService {
             eventData.put(Comment.COMMENT, comment);
             eventData.put(Article.ARTICLE, article);
             eventData.put(UserExt.USER_COMMENT_VIEW_MODE, commentViewMode);
-
-            try {
-                eventManager.fireEventAsynchronously(new Event<JSONObject>(EventTypes.ADD_COMMENT_TO_ARTICLE, eventData));
-            } catch (final EventException e) {
-                LOGGER.log(Level.ERROR, e.getMessage(), e);
-            }
+            eventManager.fireEventAsynchronously(new Event<>(EventTypes.ADD_COMMENT_TO_ARTICLE, eventData));
 
             return ret;
         } catch (final RepositoryException e) {
@@ -631,18 +629,19 @@ public class CommentMgmtService {
 
             commentRepository.update(commentId, comment);
 
-            if (!oldContent.equals(content)) {
-                // Revision
+            final long now = System.currentTimeMillis();
+            final long createTime = comment.optLong(Keys.OBJECT_ID);
+            final boolean notIn5m = now - createTime > 1000 * 60 * 5;
+
+            final boolean contentChanged = !oldContent.replaceAll("\\s+", "").equals(content.replaceAll("\\s+", ""));
+            if (notIn5m && contentChanged) {
                 final JSONObject revision = new JSONObject();
                 revision.put(Revision.REVISION_AUTHOR_ID, commentAuthorId);
-
                 final JSONObject revisionData = new JSONObject();
                 revisionData.put(Comment.COMMENT_CONTENT, content);
-
                 revision.put(Revision.REVISION_DATA, revisionData.toString());
                 revision.put(Revision.REVISION_DATA_ID, commentId);
                 revision.put(Revision.REVISION_DATA_TYPE, Revision.DATA_TYPE_C_COMMENT);
-
                 revisionRepository.add(revision);
             }
 
@@ -655,9 +654,7 @@ public class CommentMgmtService {
             if (Comment.COMMENT_ANONYMOUS_C_PUBLIC == commentAnonymous
                     && Article.ARTICLE_ANONYMOUS_C_PUBLIC == articleAnonymous) {
                 // Point
-                final long now = System.currentTimeMillis();
-                final long createTime = comment.optLong(Keys.OBJECT_ID);
-                if (now - createTime > 1000 * 60 * 5) {
+                if (notIn5m) {
                     pointtransferMgmtService.transfer(commentAuthorId, Pointtransfer.ID_C_SYS,
                             Pointtransfer.TRANSFER_TYPE_C_UPDATE_COMMENT,
                             Pointtransfer.TRANSFER_SUM_C_UPDATE_COMMENT, commentId, now, "");
@@ -668,11 +665,7 @@ public class CommentMgmtService {
             final JSONObject eventData = new JSONObject();
             eventData.put(Article.ARTICLE, article);
             eventData.put(Comment.COMMENT, comment);
-            try {
-                eventManager.fireEventAsynchronously(new Event<>(EventTypes.UPDATE_COMMENT, eventData));
-            } catch (final EventException e) {
-                LOGGER.log(Level.ERROR, e.getMessage(), e);
-            }
+            eventManager.fireEventAsynchronously(new Event<>(EventTypes.UPDATE_COMMENT, eventData));
         } catch (final RepositoryException e) {
             if (transaction.isActive()) {
                 transaction.rollback();
@@ -691,16 +684,15 @@ public class CommentMgmtService {
      *
      * @param commentId the given comment id
      * @param comment   the specified comment
-     * @throws ServiceException service exception
      */
-    public void updateCommentByAdmin(final String commentId, final JSONObject comment) throws ServiceException {
+    public void updateCommentByAdmin(final String commentId, final JSONObject comment) {
         final Transaction transaction = commentRepository.beginTransaction();
 
         try {
             final String commentAuthorId = comment.optString(Comment.COMMENT_AUTHOR_ID);
             final JSONObject author = userRepository.get(commentAuthorId);
             if (UserExt.USER_STATUS_C_VALID != author.optInt(UserExt.USER_STATUS)) {
-                throw new ServiceException(langPropsService.get("userStatusInvalidLabel"));
+                return;
             }
 
             final JSONObject oldComment = commentRepository.get(commentId);
@@ -723,7 +715,6 @@ public class CommentMgmtService {
             }
 
             LOGGER.log(Level.ERROR, "Updates a comment [id=" + commentId + "] failed", e);
-            throw new ServiceException(e);
         }
     }
 }

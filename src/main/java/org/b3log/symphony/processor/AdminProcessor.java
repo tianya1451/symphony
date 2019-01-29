@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -28,11 +28,10 @@ import org.b3log.latke.logging.Level;
 import org.b3log.latke.logging.Logger;
 import org.b3log.latke.model.Pagination;
 import org.b3log.latke.model.User;
-import org.b3log.latke.repository.jdbc.JdbcRepository;
 import org.b3log.latke.service.LangPropsService;
 import org.b3log.latke.service.ServiceException;
-import org.b3log.latke.servlet.HTTPRequestContext;
-import org.b3log.latke.servlet.HTTPRequestMethod;
+import org.b3log.latke.servlet.HttpMethod;
+import org.b3log.latke.servlet.RequestContext;
 import org.b3log.latke.servlet.annotation.After;
 import org.b3log.latke.servlet.annotation.Before;
 import org.b3log.latke.servlet.annotation.RequestProcessing;
@@ -51,13 +50,13 @@ import org.b3log.symphony.processor.advice.validate.UserRegister2Validation;
 import org.b3log.symphony.processor.advice.validate.UserRegisterValidation;
 import org.b3log.symphony.service.*;
 import org.b3log.symphony.util.Escapes;
+import org.b3log.symphony.util.Sessions;
 import org.b3log.symphony.util.Symphonys;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import java.io.IOException;
 import java.text.ParseException;
 import java.util.*;
 
@@ -114,12 +113,13 @@ import java.util.*;
  * <li>Adds an role (/admin/role), POST</li>
  * <li>Show reports (/admin/reports), GET</li>
  * <li>Makes a report as handled (/admin/report/{reportId}), GET</li>
+ * <li>Shows audit log (/admin/auditlog), GET</li>
  * </ul>
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
  * @author Bill Ho
  * @author <a href="http://vanessa.b3log.org">Liyuan Li</a>
- * @version 2.29.0.8, Aug 31, 2018
+ * @version 2.30.1.1, Jan 5, 2019
  * @since 1.1.0
  */
 @RequestProcessor
@@ -297,53 +297,100 @@ public class AdminProcessor {
     private ReportQueryService reportQueryService;
 
     /**
+     * Operation management service.
+     */
+    @Inject
+    private OperationMgmtService operationMgmtService;
+
+    /**
+     * Operation query service.
+     */
+    @Inject
+    private OperationQueryService operationQueryService;
+
+    /**
+     * Shows audit log.
+     *
+     * @param context the specified context
+     */
+    @RequestProcessing(value = "/admin/auditlog", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showAuditlog(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/auditlog.ftl");
+        final Map<String, Object> dataModel = renderer.getDataModel();
+
+        final int pageNum = Paginator.getPage(request);
+        final int pageSize = PAGE_SIZE;
+        final int windowSize = WINDOW_SIZE;
+
+        final JSONObject requestJSONObject = new JSONObject();
+        requestJSONObject.put(Pagination.PAGINATION_CURRENT_PAGE_NUM, pageNum);
+        requestJSONObject.put(Pagination.PAGINATION_PAGE_SIZE, pageSize);
+        requestJSONObject.put(Pagination.PAGINATION_WINDOW_SIZE, windowSize);
+
+        final JSONObject result = operationQueryService.getAuditlogs(requestJSONObject);
+        dataModel.put(Operation.OPERATIONS, CollectionUtils.jsonArrayToList(result.optJSONArray(Operation.OPERATIONS)));
+
+        final JSONObject pagination = result.optJSONObject(Pagination.PAGINATION);
+        final int pageCount = pagination.optInt(Pagination.PAGINATION_PAGE_COUNT);
+        final JSONArray pageNums = pagination.optJSONArray(Pagination.PAGINATION_PAGE_NUMS);
+        dataModel.put(Pagination.PAGINATION_FIRST_PAGE_NUM, pageNums.opt(0));
+        dataModel.put(Pagination.PAGINATION_LAST_PAGE_NUM, pageNums.opt(pageNums.length() - 1));
+        dataModel.put(Pagination.PAGINATION_CURRENT_PAGE_NUM, pageNum);
+        dataModel.put(Pagination.PAGINATION_PAGE_COUNT, pageCount);
+        dataModel.put(Pagination.PAGINATION_PAGE_NUMS, CollectionUtils.jsonArrayToList(pageNums));
+
+        dataModelService.fillHeaderAndFooter(context, dataModel);
+    }
+
+    /**
      * Makes a report as ignored .
      *
-     * @param response the specified response
-     * @param reportId the specified report id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/report/ignore/{reportId}", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void makeReportIgnored(final HttpServletResponse response, final String reportId) throws Exception {
+    @RequestProcessing(value = "/admin/report/ignore/{reportId}", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void makeReportIgnored(final RequestContext context) {
+        final String reportId = context.pathVar("reportId");
+        final HttpServletRequest request = context.getRequest();
         reportMgmtService.makeReportIgnored(reportId);
+        operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_MAKE_REPORT_IGNORED, reportId));
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/reports");
+        context.sendRedirect(Latkes.getServePath() + "/admin/reports");
     }
 
     /**
      * Makes a report as handled .
      *
-     * @param response the specified response
-     * @param reportId the specified report id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/report/{reportId}", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void makeReportHandled(final HttpServletResponse response, final String reportId) throws Exception {
+    @RequestProcessing(value = "/admin/report/{reportId}", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void makeReportHandled(final RequestContext context) {
+        final String reportId = context.pathVar("reportId");
+        final HttpServletRequest request = context.getRequest();
         reportMgmtService.makeReportHandled(reportId);
+        operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_MAKE_REPORT_HANDLED, reportId));
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/reports");
+        context.sendRedirect(Latkes.getServePath() + "/admin/reports");
     }
 
     /**
      * Shows reports.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/reports", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showReports(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/reports.ftl");
+    @RequestProcessing(value = "/admin/reports", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showReports(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/reports.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         final int pageNum = Paginator.getPage(request);
@@ -367,60 +414,55 @@ public class AdminProcessor {
         dataModel.put(Pagination.PAGINATION_PAGE_COUNT, pageCount);
         dataModel.put(Pagination.PAGINATION_PAGE_NUMS, CollectionUtils.jsonArrayToList(pageNums));
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Removes an role.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/role/{roleId}/remove", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void removeRole(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response, final String roleId) throws Exception {
+    @RequestProcessing(value = "/admin/role/{roleId}/remove", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void removeRole(final RequestContext context) {
+        final String roleId = context.pathVar("roleId");
+        final HttpServletRequest request = context.getRequest();
+
         final int count = roleQueryService.countUser(roleId);
         if (0 < count) {
-            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-            context.setRenderer(renderer);
-            renderer.setTemplateName("admin/error.ftl");
+            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
             final Map<String, Object> dataModel = renderer.getDataModel();
-
             dataModel.put(Keys.MSG, "Still [" + count + "] users are using this role.");
-            dataModelService.fillHeaderAndFooter(request, response, dataModel);
+            dataModelService.fillHeaderAndFooter(context, dataModel);
 
             return;
         }
 
+        final JSONObject role = roleQueryService.getRole(roleId);
+        final String roleName = role.optString(Role.ROLE_NAME);
         roleMgmtService.removeRole(roleId);
+        operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_REMOVE_ROLE, roleName));
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/roles");
+        context.sendRedirect(Latkes.getServePath() + "/admin/roles");
     }
 
     /**
      * Show admin breezemoons.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/breezemoons", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showBreezemoons(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/breezemoons.ftl");
+    @RequestProcessing(value = "/admin/breezemoons", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showBreezemoons(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/breezemoons.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
         final int pageNum = Paginator.getPage(request);
         final int pageSize = PAGE_SIZE;
         final int windowSize = WINDOW_SIZE;
-        final int avatarViewMode = (int) request.getAttribute(UserExt.USER_AVATAR_VIEW_MODE);
 
         final JSONObject requestJSONObject = new JSONObject();
         requestJSONObject.put(Pagination.PAGINATION_CURRENT_PAGE_NUM, pageNum);
@@ -434,7 +476,7 @@ public class AdminProcessor {
         fields.put(Breezemoon.BREEZEMOON_AUTHOR_ID, String.class);
         fields.put(Breezemoon.BREEZEMOON_STATUS, Integer.class);
 
-        final JSONObject result = breezemoonQueryService.getBreezemoons(avatarViewMode, requestJSONObject, fields);
+        final JSONObject result = breezemoonQueryService.getBreezemoons(requestJSONObject, fields);
         dataModel.put(Breezemoon.BREEZEMOONS, CollectionUtils.jsonArrayToList(result.optJSONArray(Breezemoon.BREEZEMOONS)));
 
         final JSONObject pagination = result.optJSONObject(Pagination.PAGINATION);
@@ -446,52 +488,43 @@ public class AdminProcessor {
         dataModel.put(Pagination.PAGINATION_PAGE_COUNT, pageCount);
         dataModel.put(Pagination.PAGINATION_PAGE_NUMS, CollectionUtils.jsonArrayToList(pageNums));
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Shows a breezemoon.
      *
-     * @param context      the specified context
-     * @param request      the specified request
-     * @param response     the specified response
-     * @param breezemoonId the specified breezemoon id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/breezemoon/{breezemoonId}", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showBreezemoon(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                               final String breezemoonId) throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/breezemoon.ftl");
+    @RequestProcessing(value = "/admin/breezemoon/{breezemoonId}", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showBreezemoon(final RequestContext context) {
+        final String breezemoonId = context.pathVar("breezemoonId");
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/breezemoon.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         final JSONObject breezemoon = breezemoonQueryService.getBreezemoon(breezemoonId);
         Escapes.escapeHTML(breezemoon);
         dataModel.put(Breezemoon.BREEZEMOON, breezemoon);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Updates a breezemoon.
      *
-     * @param context      the specified context
-     * @param request      the specified request
-     * @param response     the specified response
-     * @param breezemoonId the specified breezemoon id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/breezemoon/{breezemoonId}", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void updateBreezemoon(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                                 final String breezemoonId) throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/breezemoon.ftl");
+    @RequestProcessing(value = "/admin/breezemoon/{breezemoonId}", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void updateBreezemoon(final RequestContext context) {
+        final String breezemoonId = context.pathVar("breezemoonId");
+        final HttpServletRequest request = context.getRequest();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/breezemoon.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         JSONObject breezemoon = breezemoonQueryService.getBreezemoon(breezemoonId);
@@ -499,7 +532,7 @@ public class AdminProcessor {
         final Enumeration<String> parameterNames = request.getParameterNames();
         while (parameterNames.hasMoreElements()) {
             final String name = parameterNames.nextElement();
-            final String value = request.getParameter(name);
+            final String value = context.param(name);
 
             if (name.equals(Breezemoon.BREEZEMOON_STATUS)) {
                 breezemoon.put(name, Integer.valueOf(value));
@@ -508,29 +541,41 @@ public class AdminProcessor {
             }
         }
 
-        breezemoonMgmtService.updateBreezemoon(breezemoon);
+        try {
+            breezemoonMgmtService.updateBreezemoon(breezemoon);
+            operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_UPDATE_BREEZEMOON, breezemoonId));
+        } catch (final Exception e) {
+            LOGGER.log(Level.ERROR, "Updates a breezemoon failed", e);
+
+            return;
+        }
 
         breezemoon = breezemoonQueryService.getBreezemoon(breezemoonId);
         dataModel.put(Breezemoon.BREEZEMOON, breezemoon);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Removes a breezemoon.
      *
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/remove-breezemoon", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void removeBreezemoon(final HttpServletRequest request, final HttpServletResponse response) throws Exception {
-        final String id = request.getParameter(Common.ID);
-        breezemoonMgmtService.removeBreezemoon(id);
+    @RequestProcessing(value = "/admin/remove-breezemoon", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void removeBreezemoon(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+        final String id = context.param(Common.ID);
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/breezemoons");
+        try {
+            breezemoonMgmtService.removeBreezemoon(id);
+            operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_REMOVE_BREEZEMOON, id));
+        } catch (final Exception e) {
+            LOGGER.log(Level.ERROR, "Removes a breezemoon failed", e);
+        }
+
+        context.sendRedirect(Latkes.getServePath() + "/admin/breezemoons");
     }
 
     /**
@@ -538,82 +583,80 @@ public class AdminProcessor {
      *
      * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/tags/remove-unused", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void removeUnusedTags(final HTTPRequestContext context) {
+    @RequestProcessing(value = "/admin/tags/remove-unused", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void removeUnusedTags(final RequestContext context) {
         context.renderJSON(true);
 
         tagMgmtService.removeUnusedTags();
+        operationMgmtService.addOperation(Operation.newOperation(context.getRequest(), Operation.OPERATION_CODE_C_REMOVE_UNUSED_TAGS, ""));
     }
 
     /**
      * Adds an role.
      *
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/role", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void addRole(final HttpServletRequest request, final HttpServletResponse response) throws Exception {
-        final String roleName = request.getParameter(Role.ROLE_NAME);
+    @RequestProcessing(value = "/admin/role", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void addRole(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+        final String roleName = context.param(Role.ROLE_NAME);
         if (StringUtils.isBlank(roleName)) {
-            response.sendRedirect(Latkes.getServePath() + "/admin/roles");
+            context.sendRedirect(Latkes.getServePath() + "/admin/roles");
 
             return;
         }
 
-        final String roleDesc = request.getParameter(Role.ROLE_DESCRIPTION);
+        final String roleDesc = context.param(Role.ROLE_DESCRIPTION);
 
         final JSONObject role = new JSONObject();
         role.put(Role.ROLE_NAME, roleName);
         role.put(Role.ROLE_DESCRIPTION, roleDesc);
 
         roleMgmtService.addRole(role);
+        operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERAIONT_CODE_C_ADD_ROLE, roleName));
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/roles");
+        context.sendRedirect(Latkes.getServePath() + "/admin/roles");
     }
 
     /**
      * Updates role permissions.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/role/{roleId}/permissions", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void updateRolePermissions(final HTTPRequestContext context,
-                                      final HttpServletRequest request, final HttpServletResponse response,
-                                      final String roleId) throws Exception {
+    @RequestProcessing(value = "/admin/role/{roleId}/permissions", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void updateRolePermissions(final RequestContext context) {
+        final String roleId = context.pathVar("roleId");
+        final HttpServletRequest request = context.getRequest();
+
         final Map<String, String[]> parameterMap = request.getParameterMap();
         final Set<String> permissionIds = parameterMap.keySet();
 
         roleMgmtService.updateRolePermissions(roleId, permissionIds);
+        final JSONObject role = roleQueryService.getRole(roleId);
+        final String roleName = role.optString(Role.ROLE_NAME);
+        operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_UPDATE_ROLE_PERMS, roleName));
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/role/" + roleId + "/permissions");
+        context.sendRedirect(Latkes.getServePath() + "/admin/role/" + roleId + "/permissions");
     }
 
     /**
      * Shows role permissions.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @param roleId   the specified role id
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/role/{roleId}/permissions", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showRolePermissions(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                                    final String roleId) {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/role-permissions.ftl");
+    @RequestProcessing(value = "/admin/role/{roleId}/permissions", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showRolePermissions(final RequestContext context) {
+        final String roleId = context.pathVar("roleId");
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/role-permissions.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         final JSONObject role = roleQueryService.getRole(roleId);
@@ -635,25 +678,20 @@ public class AdminProcessor {
 
         dataModel.put(Permission.PERMISSION_T_CATEGORIES, categories);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Shows roles.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/roles", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showRoles(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/roles.ftl");
+    @RequestProcessing(value = "/admin/roles", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showRoles(final RequestContext context) {
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/roles.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         final JSONObject result = roleQueryService.getRoles(1, Integer.MAX_VALUE, 10);
@@ -661,23 +699,20 @@ public class AdminProcessor {
 
         dataModel.put(Role.ROLES, roles);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Updates side ad.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/ad/side", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void updateSideAd(final HTTPRequestContext context,
-                             final HttpServletRequest request, final HttpServletResponse response) throws Exception {
-        final String sideFullAd = request.getParameter("sideFullAd");
+    @RequestProcessing(value = "/admin/ad/side", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void updateSideAd(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+        final String sideFullAd = context.param("sideFullAd");
 
         JSONObject adOption = optionQueryService.getOption(Option.ID_C_SIDE_FULL_AD);
         if (null == adOption) {
@@ -685,31 +720,28 @@ public class AdminProcessor {
             adOption.put(Keys.OBJECT_ID, Option.ID_C_SIDE_FULL_AD);
             adOption.put(Option.OPTION_CATEGORY, Option.CATEGORY_C_AD);
             adOption.put(Option.OPTION_VALUE, sideFullAd);
-
             optionMgmtService.addOption(adOption);
+            operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_ADD_AD_POS, Option.ID_C_SIDE_FULL_AD));
         } else {
             adOption.put(Option.OPTION_VALUE, sideFullAd);
-
             optionMgmtService.updateOption(Option.ID_C_SIDE_FULL_AD, adOption);
+            operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_UPDATE_AD_POS, Option.ID_C_SIDE_FULL_AD));
         }
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/ad");
+        context.sendRedirect(Latkes.getServePath() + "/admin/ad");
     }
 
     /**
      * Updates banner.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/ad/banner", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void updateBanner(final HTTPRequestContext context,
-                             final HttpServletRequest request, final HttpServletResponse response) throws Exception {
-        final String headerBanner = request.getParameter("headerBanner");
+    @RequestProcessing(value = "/admin/ad/banner", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void updateBanner(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+        final String headerBanner = context.param("headerBanner");
 
         JSONObject adOption = optionQueryService.getOption(Option.ID_C_HEADER_BANNER);
         if (null == adOption) {
@@ -717,31 +749,28 @@ public class AdminProcessor {
             adOption.put(Keys.OBJECT_ID, Option.ID_C_HEADER_BANNER);
             adOption.put(Option.OPTION_CATEGORY, Option.CATEGORY_C_AD);
             adOption.put(Option.OPTION_VALUE, headerBanner);
-
             optionMgmtService.addOption(adOption);
+            operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_ADD_AD_POS, Option.ID_C_HEADER_BANNER));
         } else {
             adOption.put(Option.OPTION_VALUE, headerBanner);
-
             optionMgmtService.updateOption(Option.ID_C_HEADER_BANNER, adOption);
+            operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_UPDATE_AD_POS, Option.ID_C_HEADER_BANNER));
         }
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/ad");
+        context.sendRedirect(Latkes.getServePath() + "/admin/ad");
     }
 
     /**
      * Shows ad.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/ad", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showAd(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response) {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/ad.ftl");
+    @RequestProcessing(value = "/admin/ad", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showAd(final RequestContext context) {
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/ad.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         dataModel.put("sideFullAd", "");
@@ -757,42 +786,35 @@ public class AdminProcessor {
             dataModel.put("headerBanner", headerBanner.optString(Option.OPTION_VALUE));
         }
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Shows add tag.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/add-tag", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showAddTag(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response) {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/add-tag.ftl");
+    @RequestProcessing(value = "/admin/add-tag", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showAddTag(final RequestContext context) {
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/add-tag.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
-
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Adds a tag.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/add-tag", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void addTag(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        String title = StringUtils.trim(request.getParameter(Tag.TAG_TITLE));
+    @RequestProcessing(value = "/admin/add-tag", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void addTag(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        String title = StringUtils.trim(context.param(Tag.TAG_TITLE));
         try {
             if (StringUtils.isBlank(title)) {
                 throw new Exception(langPropsService.get("tagsErrorLabel"));
@@ -810,87 +832,82 @@ public class AdminProcessor {
                 }
             }
         } catch (final Exception e) {
-            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-            context.setRenderer(renderer);
-            renderer.setTemplateName("admin/error.ftl");
+            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
             final Map<String, Object> dataModel = renderer.getDataModel();
 
             dataModel.put(Keys.MSG, e.getMessage());
 
-            dataModelService.fillHeaderAndFooter(request, response, dataModel);
+            dataModelService.fillHeaderAndFooter(context, dataModel);
 
             return;
         }
 
-        final JSONObject admin = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject admin = Sessions.getUser();
         final String userId = admin.optString(Keys.OBJECT_ID);
 
         String tagId;
         try {
             tagId = tagMgmtService.addTag(userId, title);
+            operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_ADD_TAG, title));
         } catch (final ServiceException e) {
-            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-            context.setRenderer(renderer);
-            renderer.setTemplateName("admin/error.ftl");
+            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
             final Map<String, Object> dataModel = renderer.getDataModel();
 
             dataModel.put(Keys.MSG, e.getMessage());
-            dataModelService.fillHeaderAndFooter(request, response, dataModel);
+            dataModelService.fillHeaderAndFooter(context, dataModel);
 
             return;
         }
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/tag/" + tagId);
+        context.sendRedirect(Latkes.getServePath() + "/admin/tag/" + tagId);
     }
 
     /**
      * Sticks an article.
      *
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/stick-article", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void stickArticle(final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final String articleId = request.getParameter(Article.ARTICLE_T_ID);
-        articleMgmtService.adminStick(articleId);
+    @RequestProcessing(value = "/admin/stick-article", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void stickArticle(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/articles");
+        final String articleId = context.param(Article.ARTICLE_T_ID);
+        articleMgmtService.adminStick(articleId);
+        operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_STICK_ARTICLE, articleId));
+        context.sendRedirect(Latkes.getServePath() + "/admin/articles");
     }
 
     /**
      * Cancels stick an article.
      *
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/cancel-stick-article", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void stickCancelArticle(final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final String articleId = request.getParameter(Article.ARTICLE_T_ID);
-        articleMgmtService.adminCancelStick(articleId);
+    @RequestProcessing(value = "/admin/cancel-stick-article", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void stickCancelArticle(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/articles");
+        final String articleId = context.param(Article.ARTICLE_T_ID);
+        articleMgmtService.adminCancelStick(articleId);
+        operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_CANCEL_STICK_ARTICLE, articleId));
+        context.sendRedirect(Latkes.getServePath() + "/admin/articles");
     }
 
     /**
      * Generates invitecodes.
      *
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/invitecodes/generate", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void generateInvitecodes(final HttpServletRequest request, final HttpServletResponse response) throws Exception {
-        final String quantityStr = request.getParameter("quantity");
+    @RequestProcessing(value = "/admin/invitecodes/generate", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void generateInvitecodes(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final String quantityStr = context.param("quantity");
         int quantity = 20;
         try {
             quantity = Integer.valueOf(quantityStr);
@@ -898,32 +915,29 @@ public class AdminProcessor {
             // ignore
         }
 
-        String memo = request.getParameter("memo");
+        String memo = context.param("memo");
         if (StringUtils.isBlank(memo)) {
             memo = "注册帖";
         }
 
         invitecodeMgmtService.adminGenInvitecodes(quantity, memo);
+        operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_GENERATE_INVITECODES, quantity + " " + memo));
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/invitecodes");
+        context.sendRedirect(Latkes.getServePath() + "/admin/invitecodes");
     }
 
     /**
      * Shows admin invitecodes.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/invitecodes", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showInvitecodes(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/invitecodes.ftl");
+    @RequestProcessing(value = "/admin/invitecodes", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showInvitecodes(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/invitecodes.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
         final int pageNum = Paginator.getPage(request);
         final int pageSize = PAGE_SIZE;
@@ -946,51 +960,41 @@ public class AdminProcessor {
         dataModel.put(Pagination.PAGINATION_PAGE_COUNT, pageCount);
         dataModel.put(Pagination.PAGINATION_PAGE_NUMS, CollectionUtils.jsonArrayToList(pageNums));
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Shows an invitecode.
      *
-     * @param context      the specified context
-     * @param request      the specified request
-     * @param response     the specified response
-     * @param invitecodeId the specified invitecode id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/invitecode/{invitecodeId}", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showInvitecode(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                               final String invitecodeId) throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/invitecode.ftl");
+    @RequestProcessing(value = "/admin/invitecode/{invitecodeId}", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showInvitecode(final RequestContext context) {
+        final String invitecodeId = context.pathVar("invitecodeId");
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/invitecode.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         final JSONObject invitecode = invitecodeQueryService.getInvitecodeById(invitecodeId);
         dataModel.put(Invitecode.INVITECODE, invitecode);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Updates an invitecode.
      *
-     * @param context      the specified context
-     * @param request      the specified request
-     * @param response     the specified response
-     * @param invitecodeId the specified invitecode id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/invitecode/{invitecodeId}", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void updateInvitecode(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                                 final String invitecodeId) throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/invitecode.ftl");
+    @RequestProcessing(value = "/admin/invitecode/{invitecodeId}", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void updateInvitecode(final RequestContext context) {
+        final String invitecodeId = context.pathVar("invitecodeId");
+        final HttpServletRequest request = context.getRequest();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/invitecode.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         JSONObject invitecode = invitecodeQueryService.getInvitecodeById(invitecodeId);
@@ -998,71 +1002,68 @@ public class AdminProcessor {
         final Enumeration<String> parameterNames = request.getParameterNames();
         while (parameterNames.hasMoreElements()) {
             final String name = parameterNames.nextElement();
-            final String value = request.getParameter(name);
+            final String value = context.param(name);
 
             invitecode.put(name, value);
         }
 
-        invitecodeMgmtService.updateInvitecode(invitecodeId, invitecode);
+        try {
+            invitecodeMgmtService.updateInvitecode(invitecodeId, invitecode);
+            operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_UPDATE_INVITECODE, invitecodeId));
+        } catch (final Exception e) {
+            LOGGER.log(Level.ERROR, "Updates an invitecode failed", e);
+
+            return;
+        }
 
         invitecode = invitecodeQueryService.getInvitecodeById(invitecodeId);
         dataModel.put(Invitecode.INVITECODE, invitecode);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Shows add article.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/add-article", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showAddArticle(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response) {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/add-article.ftl");
+    @RequestProcessing(value = "/admin/add-article", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showAddArticle(final RequestContext context) {
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/add-article.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
-
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Adds an article.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/add-article", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void addArticle(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final String userName = request.getParameter(User.USER_NAME);
+    @RequestProcessing(value = "/admin/add-article", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void addArticle(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final String userName = context.param(User.USER_NAME);
         final JSONObject author = userQueryService.getUserByName(userName);
         if (null == author) {
-            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-            context.setRenderer(renderer);
-            renderer.setTemplateName("admin/error.ftl");
+            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
             final Map<String, Object> dataModel = renderer.getDataModel();
-
             dataModel.put(Keys.MSG, langPropsService.get("notFoundUserLabel"));
-            dataModelService.fillHeaderAndFooter(request, response, dataModel);
+            dataModelService.fillHeaderAndFooter(context, dataModel);
 
             return;
         }
 
-        final String timeStr = request.getParameter(Common.TIME);
-        final String articleTitle = request.getParameter(Article.ARTICLE_TITLE);
-        final String articleTags = request.getParameter(Article.ARTICLE_TAGS);
-        final String articleContent = request.getParameter(Article.ARTICLE_CONTENT);
-        String rewardContent = request.getParameter(Article.ARTICLE_REWARD_CONTENT);
-        final String rewardPoint = request.getParameter(Article.ARTICLE_REWARD_POINT);
+        final String timeStr = context.param(Common.TIME);
+        final String articleTitle = context.param(Article.ARTICLE_TITLE);
+        final String articleTags = context.param(Article.ARTICLE_TAGS);
+        final String articleContent = context.param(Article.ARTICLE_CONTENT);
+        String rewardContent = context.param(Article.ARTICLE_REWARD_CONTENT);
+        final String rewardPoint = context.param(Article.ARTICLE_REWARD_POINT);
 
         long time = System.currentTimeMillis();
 
@@ -1086,51 +1087,44 @@ public class AdminProcessor {
         article.put(Common.TIME, time);
 
         try {
-            articleMgmtService.addArticleByAdmin(article);
+            final String articleId = articleMgmtService.addArticleByAdmin(article);
+            operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_ADD_ARTICLE, articleId));
         } catch (final ServiceException e) {
-            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-            context.setRenderer(renderer);
-            renderer.setTemplateName("admin/error.ftl");
+            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
             final Map<String, Object> dataModel = renderer.getDataModel();
-
             dataModel.put(Keys.MSG, e.getMessage());
-            dataModelService.fillHeaderAndFooter(request, response, dataModel);
+            dataModelService.fillHeaderAndFooter(context, dataModel);
 
             return;
         }
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/articles");
+        context.sendRedirect(Latkes.getServePath() + "/admin/articles");
     }
 
     /**
      * Adds a reserved word.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/add-reserved-word", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void addReservedWord(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        String word = request.getParameter(Common.WORD);
+    @RequestProcessing(value = "/admin/add-reserved-word", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void addReservedWord(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        String word = context.param(Common.WORD);
         word = StringUtils.trim(word);
         if (StringUtils.isBlank(word)) {
-            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-            context.setRenderer(renderer);
-            renderer.setTemplateName("admin/error.ftl");
+            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
             final Map<String, Object> dataModel = renderer.getDataModel();
-
             dataModel.put(Keys.MSG, langPropsService.get("invalidReservedWordLabel"));
-            dataModelService.fillHeaderAndFooter(request, response, dataModel);
+            dataModelService.fillHeaderAndFooter(context, dataModel);
 
             return;
         }
 
         if (optionQueryService.isReservedWord(word)) {
-            response.sendRedirect(Latkes.getServePath() + "/admin/reserved-words");
+            context.sendRedirect(Latkes.getServePath() + "/admin/reserved-words");
 
             return;
         }
@@ -1141,57 +1135,46 @@ public class AdminProcessor {
             reservedWord.put(Option.OPTION_VALUE, word);
 
             optionMgmtService.addOption(reservedWord);
+            operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_ADD_RESERVED_WORD, word));
         } catch (final Exception e) {
-            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-            context.setRenderer(renderer);
-            renderer.setTemplateName("admin/error.ftl");
+            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
             final Map<String, Object> dataModel = renderer.getDataModel();
-
             dataModel.put(Keys.MSG, e.getMessage());
-            dataModelService.fillHeaderAndFooter(request, response, dataModel);
+            dataModelService.fillHeaderAndFooter(context, dataModel);
 
             return;
         }
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/reserved-words");
+        context.sendRedirect(Latkes.getServePath() + "/admin/reserved-words");
     }
 
     /**
      * Shows add reserved word.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/add-reserved-word", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showAddReservedWord(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response) {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/add-reserved-word.ftl");
+    @RequestProcessing(value = "/admin/add-reserved-word", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showAddReservedWord(final RequestContext context) {
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/add-reserved-word.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
-
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Updates a reserved word.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @param id       the specified reserved wordid
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/reserved-word/{id}", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void updateReservedWord(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                                   final String id) throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/reserved-word.ftl");
+    @RequestProcessing(value = "/admin/reserved-word/{id}", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void updateReservedWord(final RequestContext context) {
+        final String id = context.pathVar("id");
+        final HttpServletRequest request = context.getRequest();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/reserved-word.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         final JSONObject word = optionQueryService.getOption(id);
@@ -1200,164 +1183,143 @@ public class AdminProcessor {
         final Enumeration<String> parameterNames = request.getParameterNames();
         while (parameterNames.hasMoreElements()) {
             final String name = parameterNames.nextElement();
-            final String value = request.getParameter(name);
+            final String value = context.param(name);
 
             word.put(name, value);
         }
 
         optionMgmtService.updateOption(id, word);
+        operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_UPDATE_RESERVED_WORD, word.optString(Option.OPTION_VALUE)));
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Shows reserved words.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/reserved-words", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showReservedWords(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/reserved-words.ftl");
+    @RequestProcessing(value = "/admin/reserved-words", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showReservedWords(final RequestContext context) {
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/reserved-words.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         dataModel.put(Common.WORDS, optionQueryService.getReservedWords());
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Shows a reserved word.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @param id       the specified reserved word id
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/reserved-word/{id}", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showReservedWord(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                                 final String id) {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/reserved-word.ftl");
+    @RequestProcessing(value = "/admin/reserved-word/{id}", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showReservedWord(final RequestContext context) {
+        final String id = context.pathVar("id");
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/reserved-word.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         final JSONObject word = optionQueryService.getOption(id);
         dataModel.put(Common.WORD, word);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Removes a reserved word.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/remove-reserved-word", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void removeReservedWord(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final String id = request.getParameter("id");
-        optionMgmtService.removeOption(id);
+    @RequestProcessing(value = "/admin/remove-reserved-word", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void removeReservedWord(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/reserved-words");
+        final String id = context.param("id");
+        final JSONObject option = optionQueryService.getOption(id);
+        final String word = option.optString(Option.OPTION_VALUE);
+        optionMgmtService.removeOption(id);
+        operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_REMOVE_RESERVED_WORD, word));
+
+        context.sendRedirect(Latkes.getServePath() + "/admin/reserved-words");
     }
 
     /**
      * Removes a comment.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/remove-comment", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void removeComment(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final String commentId = request.getParameter(Comment.COMMENT_T_ID);
-        commentMgmtService.removeCommentByAdmin(commentId);
+    @RequestProcessing(value = "/admin/remove-comment", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void removeComment(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+        final HttpServletResponse response = context.getResponse();
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/comments");
+        final String commentId = context.param(Comment.COMMENT_T_ID);
+        commentMgmtService.removeCommentByAdmin(commentId);
+        operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_REMOVE_COMMENT, commentId));
+
+        context.sendRedirect(Latkes.getServePath() + "/admin/comments");
     }
 
     /**
      * Removes an article.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/remove-article", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void removeArticle(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final String articleId = request.getParameter(Article.ARTICLE_T_ID);
-        articleMgmtService.removeArticleByAdmin(articleId);
+    @RequestProcessing(value = "/admin/remove-article", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void removeArticle(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/articles");
+        final String articleId = context.param(Article.ARTICLE_T_ID);
+        articleMgmtService.removeArticleByAdmin(articleId);
+        operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_REMOVE_ARTICLE, articleId));
+
+        context.sendRedirect(Latkes.getServePath() + "/admin/articles");
     }
 
     /**
      * Shows admin index.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showAdminIndex(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/index.ftl");
+    @RequestProcessing(value = "/admin", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showAdminIndex(final RequestContext context) {
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/index.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
 
         dataModel.put(Common.ONLINE_VISITOR_CNT, optionQueryService.getOnlineVisitorCount());
         dataModel.put(Common.ONLINE_MEMBER_CNT, optionQueryService.getOnlineMemberCount());
 
         final JSONObject statistic = optionQueryService.getStatistic();
         dataModel.put(Option.CATEGORY_C_STATISTIC, statistic);
-
     }
 
     /**
      * Shows admin users.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/users", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showUsers(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/users.ftl");
+    @RequestProcessing(value = "/admin/users", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showUsers(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/users.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
         final int pageNum = Paginator.getPage(request);
         final int pageSize = PAGE_SIZE;
@@ -1367,7 +1329,7 @@ public class AdminProcessor {
         requestJSONObject.put(Pagination.PAGINATION_CURRENT_PAGE_NUM, pageNum);
         requestJSONObject.put(Pagination.PAGINATION_PAGE_SIZE, pageSize);
         requestJSONObject.put(Pagination.PAGINATION_WINDOW_SIZE, windowSize);
-        final String query = request.getParameter(Common.QUERY);
+        final String query = context.param(Common.QUERY);
         if (StringUtils.isNotBlank(query)) {
             requestJSONObject.put(Common.QUERY, query);
         }
@@ -1384,26 +1346,20 @@ public class AdminProcessor {
         dataModel.put(Pagination.PAGINATION_PAGE_COUNT, pageCount);
         dataModel.put(Pagination.PAGINATION_PAGE_NUMS, CollectionUtils.jsonArrayToList(pageNums));
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Shows a user.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @param userId   the specified user id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/user/{userId}", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showUser(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                         final String userId) throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/user.ftl");
+    @RequestProcessing(value = "/admin/user/{userId}", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showUser(final RequestContext context) {
+        final String userId = context.pathVar("userId");
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/user.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         final JSONObject user = userQueryService.getUser(userId);
@@ -1414,54 +1370,45 @@ public class AdminProcessor {
         final List<JSONObject> roles = (List<JSONObject>) result.opt(Role.ROLES);
         dataModel.put(Role.ROLES, roles);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Shows add user.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/add-user", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showAddUser(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response) {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/add-user.ftl");
+    @RequestProcessing(value = "/admin/add-user", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showAddUser(final RequestContext context) {
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/add-user.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
-
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Adds a user.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/add-user", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void addUser(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final String userName = request.getParameter(User.USER_NAME);
-        final String email = request.getParameter(User.USER_EMAIL);
-        final String password = request.getParameter(User.USER_PASSWORD);
-        final String appRole = request.getParameter(UserExt.USER_APP_ROLE);
+    @RequestProcessing(value = "/admin/add-user", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void addUser(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final String userName = context.param(User.USER_NAME);
+        final String email = context.param(User.USER_EMAIL);
+        final String password = context.param(User.USER_PASSWORD);
+        final String appRole = context.param(UserExt.USER_APP_ROLE);
 
         final boolean nameInvalid = UserRegisterValidation.invalidUserName(userName);
         final boolean emailInvalid = !Strings.isEmail(email);
         final boolean passwordInvalid = UserRegister2Validation.invalidUserPassword(password);
 
         if (nameInvalid || emailInvalid || passwordInvalid) {
-            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-            context.setRenderer(renderer);
-            renderer.setTemplateName("admin/error.ftl");
+            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
             final Map<String, Object> dataModel = renderer.getDataModel();
 
             if (nameInvalid) {
@@ -1472,7 +1419,7 @@ public class AdminProcessor {
                 dataModel.put(Keys.MSG, langPropsService.get("invalidPasswordLabel"));
             }
 
-            dataModelService.fillHeaderAndFooter(request, response, dataModel);
+            dataModelService.fillHeaderAndFooter(context, dataModel);
 
             return;
         }
@@ -1486,42 +1433,37 @@ public class AdminProcessor {
             user.put(UserExt.USER_APP_ROLE, appRole);
             user.put(UserExt.USER_STATUS, UserExt.USER_STATUS_C_VALID);
 
-            final JSONObject admin = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+            final JSONObject admin = Sessions.getUser();
             user.put(UserExt.USER_LANGUAGE, admin.optString(UserExt.USER_LANGUAGE));
 
             userId = userMgmtService.addUser(user);
+            operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_ADD_USER, userId));
         } catch (final ServiceException e) {
-            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-            context.setRenderer(renderer);
-            renderer.setTemplateName("admin/error.ftl");
+            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
             final Map<String, Object> dataModel = renderer.getDataModel();
 
             dataModel.put(Keys.MSG, e.getMessage());
-            dataModelService.fillHeaderAndFooter(request, response, dataModel);
+            dataModelService.fillHeaderAndFooter(context, dataModel);
 
             return;
         }
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/user/" + userId);
+        context.sendRedirect(Latkes.getServePath() + "/admin/user/" + userId);
     }
 
     /**
      * Updates a user.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @param userId   the specified user id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/user/{userId}", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void updateUser(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                           final String userId) throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/user.ftl");
+    @RequestProcessing(value = "/admin/user/{userId}", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void updateUser(final RequestContext context) {
+        final String userId = context.pathVar("userId");
+        final HttpServletRequest request = context.getRequest();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/user.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         final JSONObject user = userQueryService.getUser(userId);
@@ -1535,7 +1477,7 @@ public class AdminProcessor {
         final Enumeration<String> parameterNames = request.getParameterNames();
         while (parameterNames.hasMoreElements()) {
             final String name = parameterNames.nextElement();
-            final String value = request.getParameter(name);
+            final String value = context.param(name);
 
             switch (name) {
                 case UserExt.USER_POINT:
@@ -1581,36 +1523,41 @@ public class AdminProcessor {
             }
         }
 
-        final JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        final JSONObject currentUser = Sessions.getUser();
         if (!Role.ROLE_ID_C_ADMIN.equals(currentUser.optString(User.USER_ROLE))) {
             user.put(User.USER_ROLE, oldRole);
         }
 
-        userMgmtService.updateUser(userId, user);
+        try {
+            userMgmtService.updateUser(userId, user);
+            operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_UPDATE_USER, userId));
+        } catch (final Exception e) {
+            LOGGER.log(Level.ERROR, "Updates a user failed", e);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+            return;
+        }
+
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Updates a user's email.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @param userId   the specified user id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/user/{userId}/email", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void updateUserEmail(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                                final String userId) throws Exception {
+    @RequestProcessing(value = "/admin/user/{userId}/email", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void updateUserEmail(final RequestContext context) {
+        final String userId = context.pathVar("userId");
+        final HttpServletRequest request = context.getRequest();
+
         final JSONObject user = userQueryService.getUser(userId);
         final String oldEmail = user.optString(User.USER_EMAIL);
-        final String newEmail = request.getParameter(User.USER_EMAIL);
+        final String newEmail = context.param(User.USER_EMAIL);
 
         if (oldEmail.equals(newEmail)) {
-            response.sendRedirect(Latkes.getServePath() + "/admin/user/" + userId);
+            context.sendRedirect(Latkes.getServePath() + "/admin/user/" + userId);
 
             return;
         }
@@ -1619,41 +1566,38 @@ public class AdminProcessor {
 
         try {
             userMgmtService.updateUserEmail(userId, user);
+            operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_UPDATE_USER_EMAIL, userId));
         } catch (final ServiceException e) {
-            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-            context.setRenderer(renderer);
-            renderer.setTemplateName("admin/error.ftl");
+            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
             final Map<String, Object> dataModel = renderer.getDataModel();
 
             dataModel.put(Keys.MSG, e.getMessage());
-            dataModelService.fillHeaderAndFooter(request, response, dataModel);
+            dataModelService.fillHeaderAndFooter(context, dataModel);
 
             return;
         }
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/user/" + userId);
+        context.sendRedirect(Latkes.getServePath() + "/admin/user/" + userId);
     }
 
     /**
      * Updates a user's username.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @param userId   the specified user id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/user/{userId}/username", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void updateUserName(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                               final String userId) throws Exception {
+    @RequestProcessing(value = "/admin/user/{userId}/username", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void updateUserName(final RequestContext context) {
+        final String userId = context.pathVar("userId");
+        final HttpServletRequest request = context.getRequest();
+
         final JSONObject user = userQueryService.getUser(userId);
         final String oldUserName = user.optString(User.USER_NAME);
-        final String newUserName = request.getParameter(User.USER_NAME);
+        final String newUserName = context.param(User.USER_NAME);
 
         if (oldUserName.equals(newUserName)) {
-            response.sendRedirect(Latkes.getServePath() + "/admin/user/" + userId);
+            context.sendRedirect(Latkes.getServePath() + "/admin/user/" + userId);
 
             return;
         }
@@ -1662,42 +1606,39 @@ public class AdminProcessor {
 
         try {
             userMgmtService.updateUserName(userId, user);
+            operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_UPDATE_USER_NAME, userId));
         } catch (final ServiceException e) {
-            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-            context.setRenderer(renderer);
-            renderer.setTemplateName("admin/error.ftl");
+            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
             final Map<String, Object> dataModel = renderer.getDataModel();
 
             dataModel.put(Keys.MSG, e.getMessage());
-            dataModelService.fillHeaderAndFooter(request, response, dataModel);
+            dataModelService.fillHeaderAndFooter(context, dataModel);
 
             return;
         }
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/user/" + userId);
+        context.sendRedirect(Latkes.getServePath() + "/admin/user/" + userId);
     }
 
     /**
      * Charges a user's point.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @param userId   the specified user id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/user/{userId}/charge-point", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void chargePoint(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                            final String userId) throws Exception {
-        final String pointStr = request.getParameter(Common.POINT);
-        final String memo = request.getParameter("memo");
+    @RequestProcessing(value = "/admin/user/{userId}/charge-point", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void chargePoint(final RequestContext context) {
+        final String userId = context.pathVar("userId");
+        final HttpServletRequest request = context.getRequest();
+
+        final String pointStr = context.param(Common.POINT);
+        final String memo = context.param("memo");
 
         if (StringUtils.isBlank(pointStr) || StringUtils.isBlank(memo) || !Strings.isNumeric(memo.split("-")[0])) {
             LOGGER.warn("Charge point memo format error");
 
-            response.sendRedirect(Latkes.getServePath() + "/admin/user/" + userId);
+            context.sendRedirect(Latkes.getServePath() + "/admin/user/" + userId);
 
             return;
         }
@@ -1707,42 +1648,38 @@ public class AdminProcessor {
 
             final String transferId = pointtransferMgmtService.transfer(Pointtransfer.ID_C_SYS, userId,
                     Pointtransfer.TRANSFER_TYPE_C_CHARGE, point, memo, System.currentTimeMillis(), "");
+            operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_CHARGE_POINT, transferId));
 
             final JSONObject notification = new JSONObject();
             notification.put(Notification.NOTIFICATION_USER_ID, userId);
             notification.put(Notification.NOTIFICATION_DATA_ID, transferId);
-
             notificationMgmtService.addPointChargeNotification(notification);
         } catch (final NumberFormatException | ServiceException e) {
-            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-            context.setRenderer(renderer);
-            renderer.setTemplateName("admin/error.ftl");
+            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
             final Map<String, Object> dataModel = renderer.getDataModel();
 
             dataModel.put(Keys.MSG, e.getMessage());
-            dataModelService.fillHeaderAndFooter(request, response, dataModel);
+            dataModelService.fillHeaderAndFooter(context, dataModel);
 
             return;
         }
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/user/" + userId);
+        context.sendRedirect(Latkes.getServePath() + "/admin/user/" + userId);
     }
 
     /**
      * Deducts a user's abuse point.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @param userId   the specified user id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/user/{userId}/abuse-point", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void abusePoint(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                           final String userId) throws Exception {
-        final String pointStr = request.getParameter(Common.POINT);
+    @RequestProcessing(value = "/admin/user/{userId}/abuse-point", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void abusePoint(final RequestContext context) {
+        final String userId = context.pathVar("userId");
+        final HttpServletRequest request = context.getRequest();
+
+        final String pointStr = context.param(Common.POINT);
 
         try {
             final int point = Integer.valueOf(pointStr);
@@ -1751,56 +1688,49 @@ public class AdminProcessor {
             final int currentPoint = user.optInt(UserExt.USER_POINT);
 
             if (currentPoint - point < 0) {
-                final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-                context.setRenderer(renderer);
-                renderer.setTemplateName("admin/error.ftl");
+                final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
                 final Map<String, Object> dataModel = renderer.getDataModel();
-
                 dataModel.put(Keys.MSG, langPropsService.get("insufficientBalanceLabel"));
-                dataModelService.fillHeaderAndFooter(request, response, dataModel);
+                dataModelService.fillHeaderAndFooter(context, dataModel);
 
                 return;
             }
 
-            final String memo = request.getParameter(Common.MEMO);
+            final String memo = context.param(Common.MEMO);
 
             final String transferId = pointtransferMgmtService.transfer(userId, Pointtransfer.ID_C_SYS,
                     Pointtransfer.TRANSFER_TYPE_C_ABUSE_DEDUCT, point, memo, System.currentTimeMillis(), "");
+            operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_DEDUCT_POINT, transferId));
 
             final JSONObject notification = new JSONObject();
             notification.put(Notification.NOTIFICATION_USER_ID, userId);
             notification.put(Notification.NOTIFICATION_DATA_ID, transferId);
-
             notificationMgmtService.addAbusePointDeductNotification(notification);
         } catch (final Exception e) {
-            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-            context.setRenderer(renderer);
-            renderer.setTemplateName("admin/error.ftl");
+            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
             final Map<String, Object> dataModel = renderer.getDataModel();
-
             dataModel.put(Keys.MSG, e.getMessage());
-            dataModelService.fillHeaderAndFooter(request, response, dataModel);
+            dataModelService.fillHeaderAndFooter(context, dataModel);
 
             return;
         }
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/user/" + userId);
+        context.sendRedirect(Latkes.getServePath() + "/admin/user/" + userId);
     }
 
     /**
      * Compensates a user's initial point.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @param userId   the specified user id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/user/{userId}/init-point", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void initPoint(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                          final String userId) throws Exception {
+    @RequestProcessing(value = "/admin/user/{userId}/init-point", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void initPoint(final RequestContext context) {
+        final String userId = context.pathVar("userId");
+        final HttpServletRequest request = context.getRequest();
+        final HttpServletResponse response = context.getResponse();
+
         try {
             final JSONObject user = userQueryService.getUser(userId);
             if (null == user
@@ -1814,39 +1744,34 @@ public class AdminProcessor {
             final List<JSONObject> records
                     = pointtransferQueryService.getLatestPointtransfers(userId, Pointtransfer.TRANSFER_TYPE_C_INIT, 1);
             if (records.isEmpty()) {
-                pointtransferMgmtService.transfer(Pointtransfer.ID_C_SYS, userId, Pointtransfer.TRANSFER_TYPE_C_INIT,
+                final String transferId = pointtransferMgmtService.transfer(Pointtransfer.ID_C_SYS, userId, Pointtransfer.TRANSFER_TYPE_C_INIT,
                         Pointtransfer.TRANSFER_SUM_C_INIT, userId, Long.valueOf(userId), "");
+                operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_INIT_POINT, transferId));
             }
-        } catch (final IOException | NumberFormatException | ServiceException e) {
-            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-            context.setRenderer(renderer);
-            renderer.setTemplateName("admin/error.ftl");
+        } catch (final Exception e) {
+            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
             final Map<String, Object> dataModel = renderer.getDataModel();
-
             dataModel.put(Keys.MSG, e.getMessage());
-            dataModelService.fillHeaderAndFooter(request, response, dataModel);
+            dataModelService.fillHeaderAndFooter(context, dataModel);
 
             return;
         }
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/user/" + userId);
+        context.sendRedirect(Latkes.getServePath() + "/admin/user/" + userId);
     }
 
     /**
      * Exchanges a user's point.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @param userId   the specified user id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/user/{userId}/exchange-point", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void exchangePoint(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                              final String userId) throws Exception {
-        final String pointStr = request.getParameter(Common.POINT);
+    @RequestProcessing(value = "/admin/user/{userId}/exchange-point", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void exchangePoint(final RequestContext context) {
+        final String userId = context.pathVar("userId");
+        final HttpServletRequest request = context.getRequest();
+        final String pointStr = context.param(Common.POINT);
 
         try {
             final int point = Integer.valueOf(pointStr);
@@ -1855,13 +1780,11 @@ public class AdminProcessor {
             final int currentPoint = user.optInt(UserExt.USER_POINT);
 
             if (currentPoint - point < Symphonys.getInt("pointExchangeMin")) {
-                final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-                context.setRenderer(renderer);
-                renderer.setTemplateName("admin/error.ftl");
+                final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
                 final Map<String, Object> dataModel = renderer.getDataModel();
 
                 dataModel.put(Keys.MSG, langPropsService.get("insufficientBalanceLabel"));
-                dataModelService.fillHeaderAndFooter(request, response, dataModel);
+                dataModelService.fillHeaderAndFooter(context, dataModel);
 
                 return;
             }
@@ -1870,43 +1793,36 @@ public class AdminProcessor {
 
             final String transferId = pointtransferMgmtService.transfer(userId, Pointtransfer.ID_C_SYS,
                     Pointtransfer.TRANSFER_TYPE_C_EXCHANGE, point, memo, System.currentTimeMillis(), "");
+            operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_EXCHANGE_POINT, transferId));
 
             final JSONObject notification = new JSONObject();
             notification.put(Notification.NOTIFICATION_USER_ID, userId);
             notification.put(Notification.NOTIFICATION_DATA_ID, transferId);
-
             notificationMgmtService.addPointExchangeNotification(notification);
         } catch (final Exception e) {
-            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-            context.setRenderer(renderer);
-            renderer.setTemplateName("admin/error.ftl");
+            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
             final Map<String, Object> dataModel = renderer.getDataModel();
-
             dataModel.put(Keys.MSG, e.getMessage());
-            dataModelService.fillHeaderAndFooter(request, response, dataModel);
+            dataModelService.fillHeaderAndFooter(context, dataModel);
 
             return;
         }
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/user/" + userId);
+        context.sendRedirect(Latkes.getServePath() + "/admin/user/" + userId);
     }
 
     /**
      * Shows admin articles.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/articles", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showArticles(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/articles.ftl");
+    @RequestProcessing(value = "/admin/articles", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showArticles(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/articles.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
         final int pageNum = Paginator.getPage(request);
         final int pageSize = PAGE_SIZE;
@@ -1917,7 +1833,7 @@ public class AdminProcessor {
         requestJSONObject.put(Pagination.PAGINATION_PAGE_SIZE, pageSize);
         requestJSONObject.put(Pagination.PAGINATION_WINDOW_SIZE, windowSize);
 
-        final String articleId = request.getParameter("id");
+        final String articleId = context.param("id");
         if (StringUtils.isNotBlank(articleId)) {
             requestJSONObject.put(Keys.OBJECT_ID, articleId);
         }
@@ -1934,9 +1850,7 @@ public class AdminProcessor {
         articleFields.put(Article.ARTICLE_STATUS, Integer.class);
         articleFields.put(Article.ARTICLE_STICK, Long.class);
 
-        final int avatarViewMode = (int) request.getAttribute(UserExt.USER_AVATAR_VIEW_MODE);
-
-        final JSONObject result = articleQueryService.getArticles(avatarViewMode, requestJSONObject, articleFields);
+        final JSONObject result = articleQueryService.getArticles(requestJSONObject, articleFields);
         dataModel.put(Article.ARTICLES, CollectionUtils.jsonArrayToList(result.optJSONArray(Article.ARTICLES)));
 
         final JSONObject pagination = result.optJSONObject(Pagination.PAGINATION);
@@ -1948,52 +1862,42 @@ public class AdminProcessor {
         dataModel.put(Pagination.PAGINATION_PAGE_COUNT, pageCount);
         dataModel.put(Pagination.PAGINATION_PAGE_NUMS, CollectionUtils.jsonArrayToList(pageNums));
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Shows an article.
      *
-     * @param context   the specified context
-     * @param request   the specified request
-     * @param response  the specified response
-     * @param articleId the specified article id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/article/{articleId}", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showArticle(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                            final String articleId) throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/article.ftl");
+    @RequestProcessing(value = "/admin/article/{articleId}", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showArticle(final RequestContext context) {
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/article.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
+        final String articleId = context.pathVar("articleId");
         final JSONObject article = articleQueryService.getArticle(articleId);
         Escapes.escapeHTML(article);
         dataModel.put(Article.ARTICLE, article);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Updates an article.
      *
-     * @param context   the specified context
-     * @param request   the specified request
-     * @param response  the specified response
-     * @param articleId the specified article id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/article/{articleId}", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void updateArticle(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                              final String articleId) throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/article.ftl");
+    @RequestProcessing(value = "/admin/article/{articleId}", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void updateArticle(final RequestContext context) {
+        final String articleId = context.pathVar("articleId");
+        final HttpServletRequest request = context.getRequest();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/article.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         JSONObject article = articleQueryService.getArticle(articleId);
@@ -2001,12 +1905,13 @@ public class AdminProcessor {
         final Enumeration<String> parameterNames = request.getParameterNames();
         while (parameterNames.hasMoreElements()) {
             final String name = parameterNames.nextElement();
-            final String value = request.getParameter(name);
+            final String value = context.param(name);
 
             if (name.equals(Article.ARTICLE_REWARD_POINT)
                     || name.equals(Article.ARTICLE_QNA_OFFER_POINT)
                     || name.equals(Article.ARTICLE_STATUS)
                     || name.equals(Article.ARTICLE_TYPE)
+                    || name.equals(Article.ARTICLE_THANK_CNT)
                     || name.equals(Article.ARTICLE_GOOD_CNT)
                     || name.equals(Article.ARTICLE_BAD_CNT)
                     || name.equals(Article.ARTICLE_PERFECT)
@@ -2022,31 +1927,31 @@ public class AdminProcessor {
         article.put(Article.ARTICLE_TAGS, articleTags);
 
         articleMgmtService.updateArticleByAdmin(articleId, article);
+        operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_UPDATE_ARTICLE, articleId));
 
         article = articleQueryService.getArticle(articleId);
+        String title = article.optString(Article.ARTICLE_TITLE);
+        title = Escapes.escapeHTML(title);
+        article.put(Article.ARTICLE_TITLE, title);
         dataModel.put(Article.ARTICLE, article);
 
         updateArticleSearchIndex(article);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Shows admin comments.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/comments", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showComments(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/comments.ftl");
+    @RequestProcessing(value = "/admin/comments", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showComments(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/comments.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
         final int pageNum = Paginator.getPage(request);
         final int pageSize = PAGE_SIZE;
@@ -2066,9 +1971,7 @@ public class AdminProcessor {
         commentFields.put(Comment.COMMENT_STATUS, Integer.class);
         commentFields.put(Comment.COMMENT_CONTENT, String.class);
 
-        final int avatarViewMode = (int) request.getAttribute(UserExt.USER_AVATAR_VIEW_MODE);
-
-        final JSONObject result = commentQueryService.getComments(avatarViewMode, requestJSONObject, commentFields);
+        final JSONObject result = commentQueryService.getComments(requestJSONObject, commentFields);
         dataModel.put(Comment.COMMENTS, CollectionUtils.jsonArrayToList(result.optJSONArray(Comment.COMMENTS)));
 
         final JSONObject pagination = result.optJSONObject(Pagination.PAGINATION);
@@ -2080,52 +1983,44 @@ public class AdminProcessor {
         dataModel.put(Pagination.PAGINATION_PAGE_COUNT, pageCount);
         dataModel.put(Pagination.PAGINATION_PAGE_NUMS, CollectionUtils.jsonArrayToList(pageNums));
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Shows a comment.
      *
-     * @param context   the specified context
-     * @param request   the specified request
-     * @param response  the specified response
-     * @param commentId the specified comment id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/comment/{commentId}", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showComment(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                            final String commentId) throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/comment.ftl");
+    @RequestProcessing(value = "/admin/comment/{commentId}", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showComment(final RequestContext context) {
+        final String commentId = context.pathVar("commentId");
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/comment.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         final JSONObject comment = commentQueryService.getComment(commentId);
         Escapes.escapeHTML(comment);
         dataModel.put(Comment.COMMENT, comment);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Updates a comment.
      *
-     * @param context   the specified context
-     * @param request   the specified request
-     * @param response  the specified response
-     * @param commentId the specified comment id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/comment/{commentId}", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void updateComment(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                              final String commentId) throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/comment.ftl");
+    @RequestProcessing(value = "/admin/comment/{commentId}", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void updateComment(final RequestContext context) {
+        final String commentId = context.pathVar("commentId");
+        final HttpServletRequest request = context.getRequest();
+        final HttpServletResponse response = context.getResponse();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/comment.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         JSONObject comment = commentQueryService.getComment(commentId);
@@ -2133,9 +2028,10 @@ public class AdminProcessor {
         final Enumeration<String> parameterNames = request.getParameterNames();
         while (parameterNames.hasMoreElements()) {
             final String name = parameterNames.nextElement();
-            final String value = request.getParameter(name);
+            final String value = context.param(name);
 
             if (name.equals(Comment.COMMENT_STATUS)
+                    || name.equals(Comment.COMMENT_THANK_CNT)
                     || name.equals(Comment.COMMENT_GOOD_CNT)
                     || name.equals(Comment.COMMENT_BAD_CNT)) {
                 comment.put(name, Integer.valueOf(value));
@@ -2145,53 +2041,44 @@ public class AdminProcessor {
         }
 
         commentMgmtService.updateCommentByAdmin(commentId, comment);
+        operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_UPDATE_COMMENT, commentId));
 
         comment = commentQueryService.getComment(commentId);
         dataModel.put(Comment.COMMENT, comment);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Shows admin miscellaneous.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/misc", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showMisc(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/misc.ftl");
+    @RequestProcessing(value = "/admin/misc", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showMisc(final RequestContext context) {
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/misc.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         final List<JSONObject> misc = optionQueryService.getMisc();
         dataModel.put(Option.OPTIONS, misc);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Updates admin miscellaneous.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/misc", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void updateMisc(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/misc.ftl");
+    @RequestProcessing(value = "/admin/misc", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void updateMisc(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/misc.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         List<JSONObject> misc = new ArrayList<>();
@@ -2199,7 +2086,7 @@ public class AdminProcessor {
         final Enumeration<String> parameterNames = request.getParameterNames();
         while (parameterNames.hasMoreElements()) {
             final String name = parameterNames.nextElement();
-            final String value = request.getParameter(name);
+            final String value = context.param(name);
 
             final JSONObject option = new JSONObject();
             option.put(Keys.OBJECT_ID, name);
@@ -2212,29 +2099,26 @@ public class AdminProcessor {
         for (final JSONObject option : misc) {
             optionMgmtService.updateOption(option.getString(Keys.OBJECT_ID), option);
         }
+        operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_UPDATE_MISC, ""));
 
         misc = optionQueryService.getMisc();
         dataModel.put(Option.OPTIONS, misc);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Shows admin tags.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/tags", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showTags(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/tags.ftl");
+    @RequestProcessing(value = "/admin/tags", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showTags(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/tags.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
         final int pageNum = Paginator.getPage(request);
         final int pageSize = PAGE_SIZE;
@@ -2245,7 +2129,7 @@ public class AdminProcessor {
         requestJSONObject.put(Pagination.PAGINATION_PAGE_SIZE, pageSize);
         requestJSONObject.put(Pagination.PAGINATION_WINDOW_SIZE, windowSize);
 
-        final String tagTitle = request.getParameter(Common.TITLE);
+        final String tagTitle = context.param(Common.TITLE);
         if (StringUtils.isNotBlank(tagTitle)) {
             requestJSONObject.put(Tag.TAG_TITLE, tagTitle);
         }
@@ -2276,26 +2160,21 @@ public class AdminProcessor {
         dataModel.put(Pagination.PAGINATION_PAGE_COUNT, pageCount);
         dataModel.put(Pagination.PAGINATION_PAGE_NUMS, CollectionUtils.jsonArrayToList(pageNums));
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Shows a tag.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @param tagId    the specified tag id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/tag/{tagId}", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showTag(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                        final String tagId) throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/tag.ftl");
+    @RequestProcessing(value = "/admin/tag/{tagId}", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showTag(final RequestContext context) {
+        final String tagId = context.pathVar("tagId");
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/tag.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         final JSONObject tag = tagQueryService.getTag(tagId);
@@ -2304,33 +2183,29 @@ public class AdminProcessor {
             renderer.setTemplateName("admin/error.ftl");
 
             dataModel.put(Keys.MSG, langPropsService.get("notFoundTagLabel"));
-            dataModelService.fillHeaderAndFooter(request, response, dataModel);
+            dataModelService.fillHeaderAndFooter(context, dataModel);
 
             return;
         }
 
         dataModel.put(Tag.TAG, tag);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Updates a tag.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @param tagId    the specified tag id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/tag/{tagId}", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void updateTag(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                          final String tagId) throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/tag.ftl");
+    @RequestProcessing(value = "/admin/tag/{tagId}", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void updateTag(final RequestContext context) {
+        final String tagId = context.pathVar("tagId");
+        final HttpServletRequest request = context.getRequest();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/tag.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         JSONObject tag = tagQueryService.getTag(tagId);
@@ -2340,7 +2215,7 @@ public class AdminProcessor {
         final Enumeration<String> parameterNames = request.getParameterNames();
         while (parameterNames.hasMoreElements()) {
             final String name = parameterNames.nextElement();
-            final String value = request.getParameter(name);
+            final String value = context.param(name);
 
             if (name.equals(Tag.TAG_REFERENCE_CNT)
                     || name.equals(Tag.TAG_COMMENT_CNT)
@@ -2359,31 +2234,34 @@ public class AdminProcessor {
         final String newTitle = tag.optString(Tag.TAG_TITLE);
 
         if (oldTitle.equalsIgnoreCase(newTitle)) {
-            tagMgmtService.updateTag(tagId, tag);
+            try {
+                tagMgmtService.updateTag(tagId, tag);
+                operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_UPDATE_TAG, tagId));
+            } catch (final Exception e) {
+                LOGGER.log(Level.ERROR, "Updates a tag failed", e);
+
+                return;
+            }
         }
 
         tag = tagQueryService.getTag(tagId);
         dataModel.put(Tag.TAG, tag);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Shows admin domains.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/domains", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showDomains(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/domains.ftl");
+    @RequestProcessing(value = "/admin/domains", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showDomains(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/domains.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
         final int pageNum = Paginator.getPage(request);
         final int pageSize = PAGE_SIZE;
@@ -2394,7 +2272,7 @@ public class AdminProcessor {
         requestJSONObject.put(Pagination.PAGINATION_PAGE_SIZE, pageSize);
         requestJSONObject.put(Pagination.PAGINATION_WINDOW_SIZE, windowSize);
 
-        final String domainTitle = request.getParameter(Common.TITLE);
+        final String domainTitle = context.param(Common.TITLE);
         if (StringUtils.isNotBlank(domainTitle)) {
             requestJSONObject.put(Domain.DOMAIN_TITLE, domainTitle);
         }
@@ -2419,52 +2297,43 @@ public class AdminProcessor {
         dataModel.put(Pagination.PAGINATION_PAGE_COUNT, pageCount);
         dataModel.put(Pagination.PAGINATION_PAGE_NUMS, CollectionUtils.jsonArrayToList(pageNums));
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Shows a domain.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @param domainId the specified domain id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/domain/{domainId}", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showDomain(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                           final String domainId) throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/domain.ftl");
+    @RequestProcessing(value = "/admin/domain/{domainId}", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showDomain(final RequestContext context) {
+        final String domainId = context.pathVar("domainId");
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/domain.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         final JSONObject domain = domainQueryService.getDomain(domainId);
         dataModel.put(Domain.DOMAIN, domain);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
 
     }
 
     /**
      * Updates a domain.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @param domainId the specified domain id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/domain/{domainId}", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void updateDomain(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                             final String domainId) throws Exception {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/domain.ftl");
+    @RequestProcessing(value = "/admin/domain/{domainId}", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void updateDomain(final RequestContext context) {
+        final String domainId = context.pathVar("domainId");
+        final HttpServletRequest request = context.getRequest();
+
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/domain.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
 
         JSONObject domain = domainQueryService.getDomain(domainId);
@@ -2473,7 +2342,7 @@ public class AdminProcessor {
         final Enumeration<String> parameterNames = request.getParameterNames();
         while (parameterNames.hasMoreElements()) {
             final String name = parameterNames.nextElement();
-            String value = request.getParameter(name);
+            String value = context.param(name);
 
             if (Domain.DOMAIN_ICON_PATH.equals(name)) {
                 value = StringUtils.replace(value, "\"", "'");
@@ -2488,70 +2357,58 @@ public class AdminProcessor {
 
         if (oldTitle.equalsIgnoreCase(newTitle)) {
             domainMgmtService.updateDomain(domainId, domain);
+            operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_UPDATE_DOMAIN, domainId));
         }
 
         domain = domainQueryService.getDomain(domainId);
         dataModel.put(Domain.DOMAIN, domain);
 
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Shows add domain.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/add-domain", method = HTTPRequestMethod.GET)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void showAddDomain(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response) {
-        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-        context.setRenderer(renderer);
-        renderer.setTemplateName("admin/add-domain.ftl");
+    @RequestProcessing(value = "/admin/add-domain", method = HttpMethod.GET)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void showAddDomain(final RequestContext context) {
+        final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/add-domain.ftl");
         final Map<String, Object> dataModel = renderer.getDataModel();
-
-        dataModelService.fillHeaderAndFooter(request, response, dataModel);
+        dataModelService.fillHeaderAndFooter(context, dataModel);
     }
 
     /**
      * Adds a domain.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/add-domain", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void addDomain(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final String domainTitle = request.getParameter(Domain.DOMAIN_TITLE);
+    @RequestProcessing(value = "/admin/add-domain", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void addDomain(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
+
+        final String domainTitle = context.param(Domain.DOMAIN_TITLE);
 
         if (StringUtils.isBlank(domainTitle)) {
-            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-            context.setRenderer(renderer);
-            renderer.setTemplateName("admin/error.ftl");
+            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
             final Map<String, Object> dataModel = renderer.getDataModel();
 
             dataModel.put(Keys.MSG, langPropsService.get("invalidDomainTitleLabel"));
 
-            dataModelService.fillHeaderAndFooter(request, response, dataModel);
+            dataModelService.fillHeaderAndFooter(context, dataModel);
 
             return;
         }
 
         if (null != domainQueryService.getByTitle(domainTitle)) {
-            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-            context.setRenderer(renderer);
-            renderer.setTemplateName("admin/error.ftl");
+            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
             final Map<String, Object> dataModel = renderer.getDataModel();
-
             dataModel.put(Keys.MSG, langPropsService.get("duplicatedDomainLabel"));
-
-            dataModelService.fillHeaderAndFooter(request, response, dataModel);
+            dataModelService.fillHeaderAndFooter(context, dataModel);
 
             return;
         }
@@ -2565,56 +2422,50 @@ public class AdminProcessor {
             domain.put(Domain.DOMAIN_STATUS, Domain.DOMAIN_STATUS_C_VALID);
 
             domainId = domainMgmtService.addDomain(domain);
+            operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_ADD_DOMAIN, domainId));
         } catch (final ServiceException e) {
-            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-            context.setRenderer(renderer);
-            renderer.setTemplateName("admin/error.ftl");
+            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
             final Map<String, Object> dataModel = renderer.getDataModel();
-
             dataModel.put(Keys.MSG, e.getMessage());
-            dataModelService.fillHeaderAndFooter(request, response, dataModel);
+            dataModelService.fillHeaderAndFooter(context, dataModel);
 
             return;
         }
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/domain/" + domainId);
+        context.sendRedirect(Latkes.getServePath() + "/admin/domain/" + domainId);
     }
 
     /**
      * Removes a domain.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/remove-domain", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void removeDomain(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response)
-            throws Exception {
-        final String domainId = request.getParameter(Domain.DOMAIN_T_ID);
-        domainMgmtService.removeDomain(domainId);
+    @RequestProcessing(value = "/admin/remove-domain", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void removeDomain(final RequestContext context) {
+        final HttpServletRequest request = context.getRequest();
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/domains");
+        final String domainId = context.param(Domain.DOMAIN_T_ID);
+        domainMgmtService.removeDomain(domainId);
+        operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_REMOVE_DOMAIN, domainId));
+
+        context.sendRedirect(Latkes.getServePath() + "/admin/domains");
     }
 
     /**
      * Adds a tag into a domain.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @param domainId the specified domain id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/domain/{domainId}/add-tag", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void addDomainTag(final HTTPRequestContext context,
-                             final HttpServletRequest request, final HttpServletResponse response, final String domainId)
-            throws Exception {
-        String tagTitle = request.getParameter(Tag.TAG_TITLE);
+    @RequestProcessing(value = "/admin/domain/{domainId}/add-tag", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void addDomainTag(final RequestContext context) {
+        final String domainId = context.pathVar("domainId");
+        final HttpServletRequest request = context.getRequest();
+
+        String tagTitle = context.param(Tag.TAG_TITLE);
         final JSONObject tag = tagQueryService.getTagByTitle(tagTitle);
 
         String tagId;
@@ -2638,40 +2489,32 @@ public class AdminProcessor {
                     }
                 }
             } catch (final Exception e) {
-                final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-                context.setRenderer(renderer);
-                renderer.setTemplateName("admin/error.ftl");
+                final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
                 final Map<String, Object> dataModel = renderer.getDataModel();
-
                 dataModel.put(Keys.MSG, e.getMessage());
-
-                dataModelService.fillHeaderAndFooter(request, response, dataModel);
+                dataModelService.fillHeaderAndFooter(context, dataModel);
 
                 return;
             }
 
-            final JSONObject admin = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+            final JSONObject admin = Sessions.getUser();
             final String userId = admin.optString(Keys.OBJECT_ID);
 
             try {
                 tagId = tagMgmtService.addTag(userId, tagTitle);
             } catch (final ServiceException e) {
-                final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-                context.setRenderer(renderer);
-                renderer.setTemplateName("admin/error.ftl");
+                final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
                 final Map<String, Object> dataModel = renderer.getDataModel();
 
                 dataModel.put(Keys.MSG, e.getMessage());
-                dataModelService.fillHeaderAndFooter(request, response, dataModel);
+                dataModelService.fillHeaderAndFooter(context, dataModel);
 
                 return;
             }
         }
 
         if (domainQueryService.containTag(tagTitle, domainId)) {
-            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-            context.setRenderer(renderer);
-            renderer.setTemplateName("admin/error.ftl");
+            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
             final Map<String, Object> dataModel = renderer.getDataModel();
 
             String msg = langPropsService.get("domainContainTagLabel");
@@ -2679,7 +2522,7 @@ public class AdminProcessor {
 
             dataModel.put(Keys.MSG, msg);
 
-            dataModelService.fillHeaderAndFooter(request, response, dataModel);
+            dataModelService.fillHeaderAndFooter(context, dataModel);
 
             return;
         }
@@ -2689,37 +2532,33 @@ public class AdminProcessor {
         domainTag.put(Tag.TAG + "_" + Keys.OBJECT_ID, tagId);
 
         domainMgmtService.addDomainTag(domainTag);
+        operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_ADD_DOMAIN_TAG, domainId));
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/domain/" + domainId);
+        context.sendRedirect(Latkes.getServePath() + "/admin/domain/" + domainId);
     }
 
     /**
      * Removes a tag from a domain.
      *
-     * @param context  the specified context
-     * @param request  the specified request
-     * @param response the specified response
-     * @param domainId the specified domain id
-     * @throws Exception exception
+     * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/domain/{domainId}/remove-tag", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = {PermissionGrant.class, StopwatchEndAdvice.class})
-    public void removeDomain(final HTTPRequestContext context, final HttpServletRequest request, final HttpServletResponse response,
-                             final String domainId)
-            throws Exception {
-        final String tagTitle = request.getParameter(Tag.TAG_TITLE);
+    @RequestProcessing(value = "/admin/domain/{domainId}/remove-tag", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After({PermissionGrant.class, StopwatchEndAdvice.class})
+    public void removeDomainTag(final RequestContext context) {
+        final String domainId = context.pathVar("domainId");
+        final HttpServletRequest request = context.getRequest();
+
+        final String tagTitle = context.param(Tag.TAG_TITLE);
         final JSONObject tag = tagQueryService.getTagByTitle(tagTitle);
 
         if (null == tag) {
-            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(request);
-            context.setRenderer(renderer);
-            renderer.setTemplateName("admin/error.ftl");
+            final AbstractFreeMarkerRenderer renderer = new SkinRenderer(context, "admin/error.ftl");
             final Map<String, Object> dataModel = renderer.getDataModel();
 
             dataModel.put(Keys.MSG, langPropsService.get("invalidTagLabel"));
 
-            dataModelService.fillHeaderAndFooter(request, response, dataModel);
+            dataModelService.fillHeaderAndFooter(context, dataModel);
 
             return;
         }
@@ -2729,8 +2568,9 @@ public class AdminProcessor {
         domainTag.put(Tag.TAG + "_" + Keys.OBJECT_ID, tag.optString(Keys.OBJECT_ID));
 
         domainMgmtService.removeDomainTag(domainId, tag.optString(Keys.OBJECT_ID));
+        operationMgmtService.addOperation(Operation.newOperation(request, Operation.OPERATION_CODE_C_REMOVE_DOMAIN_TAG, domainId));
 
-        response.sendRedirect(Latkes.getServePath() + "/admin/domain/" + domainId);
+        context.sendRedirect(Latkes.getServePath() + "/admin/domain/" + domainId);
     }
 
     /**
@@ -2738,10 +2578,10 @@ public class AdminProcessor {
      *
      * @param context the specified context
      */
-    @RequestProcessing(value = "/admin/search/index", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void rebuildArticleSearchIndex(final HTTPRequestContext context) {
+    @RequestProcessing(value = "/admin/search/index", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void rebuildArticleSearchIndex(final RequestContext context) {
         context.renderJSON(true);
 
         if (Symphonys.getBoolean("es.enabled")) {
@@ -2752,7 +2592,7 @@ public class AdminProcessor {
             searchMgmtService.rebuildAlgoliaIndex();
         }
 
-        new Thread(() -> {
+        Symphonys.EXECUTOR_SERVICE.submit(() -> {
             try {
                 final JSONObject stat = optionQueryService.getStatistic();
                 final int articleCount = stat.optInt(Option.ID_C_STATISTIC_ARTICLE_COUNT);
@@ -2777,28 +2617,28 @@ public class AdminProcessor {
                 LOGGER.info("Index finished");
             } catch (final Exception e) {
                 LOGGER.log(Level.ERROR, "Search index failed", e);
-            } finally {
-                JdbcRepository.dispose();
             }
-        }).start();
+        });
+
+        operationMgmtService.addOperation(Operation.newOperation(context.getRequest(), Operation.OPERATION_CODE_C_REBUILD_ARTICLES_SEARCH, ""));
     }
 
     /**
      * Rebuilds one article search index.
      *
      * @param context the specified context
-     * @throws Exception exception
      */
-    @RequestProcessing(value = "/admin/search-index-article", method = HTTPRequestMethod.POST)
-    @Before(adviceClass = {StopwatchStartAdvice.class, PermissionCheck.class})
-    @After(adviceClass = StopwatchEndAdvice.class)
-    public void rebuildOneArticleSearchIndex(final HTTPRequestContext context) throws Exception {
+    @RequestProcessing(value = "/admin/search-index-article", method = HttpMethod.POST)
+    @Before({StopwatchStartAdvice.class, PermissionCheck.class})
+    @After(StopwatchEndAdvice.class)
+    public void rebuildOneArticleSearchIndex(final RequestContext context) {
         final String articleId = context.getRequest().getParameter(Article.ARTICLE_T_ID);
         final JSONObject article = articleQueryService.getArticle(articleId);
 
         updateArticleSearchIndex(article);
+        operationMgmtService.addOperation(Operation.newOperation(context.getRequest(), Operation.OPERATION_CODE_C_REBUILD_ARTICLE_SEARCH, articleId));
 
-        context.getResponse().sendRedirect(Latkes.getServePath() + "/admin/articles");
+        context.sendRedirect(Latkes.getServePath() + "/admin/articles");
     }
 
     private void updateArticleSearchIndex(final JSONObject article) {

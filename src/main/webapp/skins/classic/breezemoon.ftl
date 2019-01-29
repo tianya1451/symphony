@@ -1,7 +1,7 @@
 <#--
 
     Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
-    Copyright (C) 2012-2018, b3log.org & hacpai.com
+    Copyright (C) 2012-2019, b3log.org & hacpai.com
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published by
@@ -82,6 +82,11 @@
                                             </span>
                                             &nbsp;&nbsp;
                                             </#if>
+                                            <a class="tooltipped tooltipped-n ft-a-title"
+                                               href="${servePath}/member/${item.breezemoonAuthorName}/breezemoons/${item.oId}"
+                                               aria-label="${linkLabel}">
+                                                <svg><use xlink:href="#link"></use></svg>
+                                            </a>
                                             <#--
                                             <span class="tooltipped tooltipped-n ft-a-title copy"
                                                   aria-label="${copyLabel}">

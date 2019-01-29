@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -19,9 +19,9 @@ package org.b3log.symphony.processor.advice;
 
 import org.b3log.latke.ioc.Singleton;
 import org.b3log.latke.logging.Logger;
-import org.b3log.latke.servlet.HTTPRequestContext;
-import org.b3log.latke.servlet.advice.AfterRequestProcessAdvice;
-import org.b3log.latke.servlet.renderer.AbstractHTTPResponseRenderer;
+import org.b3log.latke.servlet.RequestContext;
+import org.b3log.latke.servlet.advice.ProcessAdvice;
+import org.b3log.latke.servlet.renderer.AbstractResponseRenderer;
 import org.b3log.symphony.model.Common;
 import org.b3log.symphony.util.Sessions;
 
@@ -35,7 +35,7 @@ import java.util.Map;
  * @since 1.3.0
  */
 @Singleton
-public class CSRFToken extends AfterRequestProcessAdvice {
+public class CSRFToken extends ProcessAdvice {
 
     /**
      * Logger.
@@ -43,12 +43,12 @@ public class CSRFToken extends AfterRequestProcessAdvice {
     private static final Logger LOGGER = Logger.getLogger(CSRFToken.class);
 
     @Override
-    public void doAdvice(final HTTPRequestContext context, final Object ret) {
-        final AbstractHTTPResponseRenderer renderer = context.getRenderer();
+    public void doAdvice(final RequestContext context) {
+        final AbstractResponseRenderer renderer = context.getRenderer();
         if (null != renderer) {
             final Map<String, Object> dataModel = renderer.getRenderDataModel();
 
-            dataModel.put(Common.CSRF_TOKEN, Sessions.getCSRFToken(context.getRequest()));
+            dataModel.put(Common.CSRF_TOKEN, Sessions.getCSRFToken(context));
         }
     }
 }

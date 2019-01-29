@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -164,10 +164,9 @@ public class NotificationMgmtService {
      * @param requestJSONObject the specified request json object, for example,
      *                          "userId": "",
      *                          "dataId": "" // article id-vote user id
-     * @throws ServiceException service exception
      */
     @Transactional
-    public void addArticleVoteUpNotification(final JSONObject requestJSONObject) throws ServiceException {
+    public void addArticleVoteUpNotification(final JSONObject requestJSONObject) {
         try {
             requestJSONObject.put(Notification.NOTIFICATION_DATA_TYPE, Notification.DATA_TYPE_C_ARTICLE_VOTE_UP);
 
@@ -175,8 +174,6 @@ public class NotificationMgmtService {
         } catch (final RepositoryException e) {
             final String msg = "Adds a notification [type=article_vote_up] failed";
             LOGGER.log(Level.ERROR, msg, e);
-
-            throw new ServiceException(msg);
         }
     }
 
@@ -208,10 +205,9 @@ public class NotificationMgmtService {
      * @param requestJSONObject the specified request json object, for example,
      *                          "userId": "",
      *                          "dataId": "" // comment id-vote user id
-     * @throws ServiceException service exception
      */
     @Transactional
-    public void addCommentVoteUpNotification(final JSONObject requestJSONObject) throws ServiceException {
+    public void addCommentVoteUpNotification(final JSONObject requestJSONObject) {
         try {
             requestJSONObject.put(Notification.NOTIFICATION_DATA_TYPE, Notification.DATA_TYPE_C_COMMENT_VOTE_UP);
 
@@ -219,8 +215,6 @@ public class NotificationMgmtService {
         } catch (final RepositoryException e) {
             final String msg = "Adds a notification [type=comment_vote_up] failed";
             LOGGER.log(Level.ERROR, msg, e);
-
-            throw new ServiceException(msg);
         }
     }
 
@@ -230,10 +224,9 @@ public class NotificationMgmtService {
      * @param requestJSONObject the specified request json object, for example,
      *                          "userId": "",
      *                          "dataId": "" // article id-follower user id
-     * @throws ServiceException service exception
      */
     @Transactional
-    public void addArticleNewWatcherNotification(final JSONObject requestJSONObject) throws ServiceException {
+    public void addArticleNewWatcherNotification(final JSONObject requestJSONObject) {
         try {
             requestJSONObject.put(Notification.NOTIFICATION_DATA_TYPE, Notification.DATA_TYPE_C_ARTICLE_NEW_WATCHER);
 
@@ -241,8 +234,6 @@ public class NotificationMgmtService {
         } catch (final RepositoryException e) {
             final String msg = "Adds a notification [type=article_new_watcher] failed";
             LOGGER.log(Level.ERROR, msg, e);
-
-            throw new ServiceException(msg);
         }
     }
 
@@ -252,10 +243,9 @@ public class NotificationMgmtService {
      * @param requestJSONObject the specified request json object, for example,
      *                          "userId": "",
      *                          "dataId": "" // article id-follower user id
-     * @throws ServiceException service exception
      */
     @Transactional
-    public void addArticleNewFollowerNotification(final JSONObject requestJSONObject) throws ServiceException {
+    public void addArticleNewFollowerNotification(final JSONObject requestJSONObject) {
         try {
             requestJSONObject.put(Notification.NOTIFICATION_DATA_TYPE, Notification.DATA_TYPE_C_ARTICLE_NEW_FOLLOWER);
 
@@ -263,8 +253,6 @@ public class NotificationMgmtService {
         } catch (final RepositoryException e) {
             final String msg = "Adds a notification [type=article_new_follower] failed";
             LOGGER.log(Level.ERROR, msg, e);
-
-            throw new ServiceException(msg);
         }
     }
 
@@ -384,10 +372,9 @@ public class NotificationMgmtService {
      * @param requestJSONObject the specified request json object, for example,
      *                          "userId": "",
      *                          "dataId": "" // new follower id
-     * @throws ServiceException service exception
      */
     @Transactional
-    public void addNewFollowerNotification(final JSONObject requestJSONObject) throws ServiceException {
+    public void addNewFollowerNotification(final JSONObject requestJSONObject) {
         try {
             requestJSONObject.put(Notification.NOTIFICATION_DATA_TYPE, Notification.DATA_TYPE_C_NEW_FOLLOWER);
 
@@ -395,8 +382,6 @@ public class NotificationMgmtService {
         } catch (final RepositoryException e) {
             final String msg = "Adds a notification [type=new_follower] failed";
             LOGGER.log(Level.ERROR, msg, e);
-
-            throw new ServiceException(msg);
         }
     }
 
@@ -551,10 +536,9 @@ public class NotificationMgmtService {
      * Makes the specified notifications have been read.
      *
      * @param notifications the specified notifications
-     * @throws ServiceException service exception
      */
     @Transactional
-    public void makeRead(final Collection<JSONObject> notifications) throws ServiceException {
+    public void makeRead(final Collection<JSONObject> notifications) {
         for (final JSONObject notification : notifications) {
             makeRead(notification);
         }
@@ -565,10 +549,9 @@ public class NotificationMgmtService {
      *
      * @param notification the specified notification, return directly if this notification has been read
      *                     (notification.hasRead equals to {@code true})
-     * @throws ServiceException service exception
      */
     @Transactional
-    public void makeRead(final JSONObject notification) throws ServiceException {
+    public void makeRead(final JSONObject notification) {
         if (notification.optBoolean(Notification.NOTIFICATION_HAS_READ)) {
             return;
         }
@@ -587,8 +570,6 @@ public class NotificationMgmtService {
         } catch (final RepositoryException e) {
             final String msg = "Makes notification as read failed";
             LOGGER.log(Level.ERROR, msg, e);
-
-            throw new ServiceException(msg);
         }
     }
 
@@ -686,10 +667,9 @@ public class NotificationMgmtService {
      * @param requestJSONObject the specified request json object, for example,
      *                          "userId"; "",
      *                          "dataId": "" // transfer record id
-     * @throws ServiceException service exception
      */
     @Transactional
-    public void addPointTransferNotification(final JSONObject requestJSONObject) throws ServiceException {
+    public void addPointTransferNotification(final JSONObject requestJSONObject) {
         try {
             requestJSONObject.put(Notification.NOTIFICATION_DATA_TYPE, Notification.DATA_TYPE_C_POINT_TRANSFER);
 
@@ -697,8 +677,6 @@ public class NotificationMgmtService {
         } catch (final RepositoryException e) {
             final String msg = "Adds a notification [type=point_transfer] failed";
             LOGGER.log(Level.ERROR, msg, e);
-
-            throw new ServiceException(msg);
         }
     }
 
@@ -776,7 +754,6 @@ public class NotificationMgmtService {
      *                          "dataId": ""
      * @throws ServiceException service exception
      */
-    // XXX: Unused
     @Transactional
     public void addCommentNotification(final JSONObject requestJSONObject) throws ServiceException {
         try {
@@ -821,7 +798,6 @@ public class NotificationMgmtService {
      *                          "dataId": ""
      * @throws ServiceException service exception
      */
-    // XXX: Unused
     @Transactional
     public void addArticleNotification(final JSONObject requestJSONObject) throws ServiceException {
         try {

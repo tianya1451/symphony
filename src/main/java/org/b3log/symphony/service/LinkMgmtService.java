@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -27,6 +27,7 @@ import org.b3log.latke.logging.Logger;
 import org.b3log.latke.repository.RepositoryException;
 import org.b3log.latke.repository.Transaction;
 import org.b3log.latke.service.annotation.Service;
+import org.b3log.symphony.model.Common;
 import org.b3log.symphony.model.Link;
 import org.b3log.symphony.repository.LinkRepository;
 import org.b3log.symphony.util.Links;
@@ -191,7 +192,7 @@ public class LinkMgmtService {
             int responseCode = 0;
             try {
                 final int TIMEOUT = 5000;
-                final HttpResponse response = HttpRequest.get(linkAddr).timeout(TIMEOUT).followRedirects(true).header("User-Agent", Symphonys.USER_AGENT_BOT).send();
+                final HttpResponse response = HttpRequest.get(linkAddr).timeout(TIMEOUT).followRedirects(true).header(Common.USER_AGENT, Symphonys.USER_AGENT_BOT).send();
                 responseCode = response.statusCode();
             } catch (final Exception e) {
                 LOGGER.trace("Link [url=" + linkAddr + "] accessibility check failed [msg=" + e.getMessage() + "]");
@@ -200,7 +201,7 @@ public class LinkMgmtService {
 
                 final long elapsed = System.currentTimeMillis() - start;
                 LOGGER.log(Level.TRACE, "Accesses link [url=" + linkAddr + "] response [code=" + responseCode + "], "
-                        + "elapsed [" + elapsed + ']');
+                        + "elapsed [" + elapsed + "]");
 
                 link.put(Link.LINK_PING_CNT, link.optInt(Link.LINK_PING_CNT) + 1);
                 if (HttpServletResponse.SC_OK != responseCode) {

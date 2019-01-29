@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -54,7 +54,7 @@ public class LinkRepository extends AbstractRepository {
     public JSONObject getLink(final String addr) {
         final String hash = DigestUtils.sha1Hex(addr);
         final Query query = new Query().setFilter(new PropertyFilter(Link.LINK_ADDR_HASH, FilterOperator.EQUAL, hash)).
-                setPageCount(1).setPageSize(1).setCurrentPageNum(1);
+                setPageCount(1).setPage(1, 1);
         try {
             final JSONObject result = get(query);
             final JSONArray links = result.optJSONArray(Keys.RESULTS);

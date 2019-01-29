@@ -1,6 +1,6 @@
 {
   "description": "Description of repository structures, for generation of the relational database table and persistence validation.",
-  "version": "4.40.0.5, Oct 1, 2018",
+  "version": "4.41.0.1, Dec 16, 2018",
   "authors": [
     "Liang Ding",
     "Zephyr",
@@ -8,6 +8,52 @@
   ],
   "since": "0.2.0",
   "repositories": [
+    {
+      "name": "operation",
+      "description": "关键操作记录表",
+      "keys": [
+        {
+          "name": "oId",
+          "type": "String",
+          "length": 19,
+          "description": "主键"
+        },
+        {
+          "name": "operationUserId",
+          "type": "String",
+          "length": 19,
+          "description": "操作用户 id"
+        },
+        {
+          "name": "operationCode",
+          "type": "int",
+          "description": "具体操作码，具体参考 Operation 模型中的操作码常量定义"
+        },
+        {
+          "name": "operationDataId",
+          "type": "String",
+          "length": 255,
+          "description": "操作数据 id"
+        },
+        {
+          "name": "operationCreated",
+          "type": "long",
+          "description": "操作时间"
+        },
+        {
+          "name": "operationIP",
+          "type": "String",
+          "length": 128,
+          "description": "操作 IP"
+        },
+        {
+          "name": "operationUA",
+          "type": "String",
+          "length": 255,
+          "description": "User-Agent"
+        }
+      ]
+    },
     {
       "name": "visit",
       "description": "浏览表 https://github.com/b3log/symphony/issues/687",
@@ -158,7 +204,7 @@
         {
           "name": "breezemoonUA",
           "type": "String",
-          "length": "255",
+          "length": 255,
           "description": "User-Agent"
         },
         {
@@ -963,6 +1009,11 @@
           "description": "0：公开回帖，1：匿名回帖"
         },
         {
+          "name": "commentThankCnt",
+          "type": "int",
+          "description": "回帖感谢计数"
+        },
+        {
           "name": "commentGoodCnt",
           "type": "int",
           "description": "回帖点赞计数"
@@ -975,7 +1026,7 @@
         {
           "name": "commentScore",
           "type": "double",
-          "description": "回帖评分"
+          "description": "回帖 Reddit 算法评分"
         },
         {
           "name": "commentReplyCnt",
@@ -985,7 +1036,7 @@
         {
           "name": "commentAudioURL",
           "type": "String",
-          "length": 256,
+          "length": 255,
           "description": "回帖语音文件 URL"
         },
         {
@@ -1584,6 +1635,12 @@
           "name": "userForwardPageStatus",
           "type": "int",
           "description": "0：使用重定向页面，1：禁用重定向页面"
+        },
+        {
+          "name": "userIndexRedirectURL",
+          "type": "String",
+          "length": 255,
+          "description": "自定义首页跳转 https://github.com/b3log/symphony/issues/774"
         }
       ]
     },
@@ -1692,7 +1749,12 @@
         {
           "name": "articleType",
           "type": "int",
-          "description": "0：普通帖子，1：讨论组（小黑屋），2：同城广播，3：思绪"
+          "description": "0：普通帖子，1：机要，2：同城广播，3：思绪"
+        },
+        {
+          "name": "articleThankCnt",
+          "type": "int",
+          "description": "帖子感谢计数"
         },
         {
           "name": "articleGoodCnt",
@@ -1760,7 +1822,7 @@
         {
           "name": "articleAudioURL",
           "type": "String",
-          "length": 256,
+          "length": 255,
           "description": "帖子语音文件 URL"
         },
         {

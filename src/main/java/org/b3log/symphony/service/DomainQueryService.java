@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -24,7 +24,6 @@ import org.b3log.latke.logging.Level;
 import org.b3log.latke.logging.Logger;
 import org.b3log.latke.model.Pagination;
 import org.b3log.latke.repository.*;
-import org.b3log.latke.service.ServiceException;
 import org.b3log.latke.service.annotation.Service;
 import org.b3log.latke.util.CollectionUtils;
 import org.b3log.latke.util.Paginator;
@@ -92,7 +91,7 @@ public class DomainQueryService {
                 addSort(Domain.DOMAIN_SORT, SortDirection.ASCENDING).
                 addSort(Domain.DOMAIN_TAG_COUNT, SortDirection.DESCENDING).
                 addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                setPageSize(Integer.MAX_VALUE).setPageCount(1);
+                setPage(1, Integer.MAX_VALUE).setPageCount(1);
         try {
             final List<JSONObject> ret = CollectionUtils.jsonArrayToList(domainRepository.get(query).optJSONArray(Keys.RESULTS));
             for (final JSONObject domain : ret) {
@@ -121,7 +120,7 @@ public class DomainQueryService {
                 addSort(Domain.DOMAIN_SORT, SortDirection.ASCENDING).
                 addSort(Domain.DOMAIN_TAG_COUNT, SortDirection.DESCENDING).
                 addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                setPageSize(fetchSize).setPageCount(1);
+                setPage(1, fetchSize).setPageCount(1);
         try {
             final List<JSONObject> ret = CollectionUtils.jsonArrayToList(domainRepository.get(query).optJSONArray(Keys.RESULTS));
             for (final JSONObject domain : ret) {
@@ -171,9 +170,8 @@ public class DomainQueryService {
      *
      * @param domainURI the specified domain URI
      * @return domain, returns {@code null} if not null
-     * @throws ServiceException service exception
      */
-    public JSONObject getByURI(final String domainURI) throws ServiceException {
+    public JSONObject getByURI(final String domainURI) {
         try {
             final JSONObject ret = domainRepository.getByURI(domainURI);
             if (null == ret) {
@@ -187,7 +185,6 @@ public class DomainQueryService {
             String description = ret.optString(Domain.DOMAIN_DESCRIPTION);
             String descriptionText = ret.optString(Domain.DOMAIN_TITLE);
             if (StringUtils.isNotBlank(description)) {
-                description = shortLinkQueryService.linkTag(description);
                 description = Markdowns.toHTML(description);
 
                 ret.put(Domain.DOMAIN_DESCRIPTION, description);
@@ -212,7 +209,7 @@ public class DomainQueryService {
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets domain [URI=" + domainURI + "] failed", e);
 
-            throw new ServiceException(e);
+            return null;
         }
     }
 
@@ -221,9 +218,8 @@ public class DomainQueryService {
      *
      * @param domainTitle the specified domain title
      * @return domain, returns {@code null} if not null
-     * @throws ServiceException service exception
      */
-    public JSONObject getByTitle(final String domainTitle) throws ServiceException {
+    public JSONObject getByTitle(final String domainTitle) {
         try {
             final JSONObject ret = domainRepository.getByTitle(domainTitle);
             if (null == ret) {
@@ -237,7 +233,6 @@ public class DomainQueryService {
             String description = ret.optString(Domain.DOMAIN_DESCRIPTION);
             String descriptionText = ret.optString(Domain.DOMAIN_TITLE);
             if (StringUtils.isNotBlank(description)) {
-                description = shortLinkQueryService.linkTag(description);
                 description = Markdowns.toHTML(description);
 
                 ret.put(Domain.DOMAIN_DESCRIPTION, description);
@@ -260,7 +255,7 @@ public class DomainQueryService {
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets domain [title=" + domainTitle + "] failed", e);
 
-            throw new ServiceException(e);
+            return null;
         }
     }
 
@@ -289,21 +284,20 @@ public class DomainQueryService {
      *      }, ....]
      * }
      * </pre>
-     * @throws ServiceException service exception
      * @see Pagination
      */
-    public JSONObject getDomains(final JSONObject requestJSONObject, final Map<String, Class<?>> domainFields) throws ServiceException {
+    public JSONObject getDomains(final JSONObject requestJSONObject, final Map<String, Class<?>> domainFields) {
         final JSONObject ret = new JSONObject();
 
         final int currentPageNum = requestJSONObject.optInt(Pagination.PAGINATION_CURRENT_PAGE_NUM);
         final int pageSize = requestJSONObject.optInt(Pagination.PAGINATION_PAGE_SIZE);
         final int windowSize = requestJSONObject.optInt(Pagination.PAGINATION_WINDOW_SIZE);
-        final Query query = new Query().setCurrentPageNum(currentPageNum).setPageSize(pageSize).
+        final Query query = new Query().setPage(currentPageNum, pageSize).
                 addSort(Domain.DOMAIN_SORT, SortDirection.ASCENDING).
                 addSort(Domain.DOMAIN_TAG_COUNT, SortDirection.DESCENDING).
                 addSort(Keys.OBJECT_ID, SortDirection.DESCENDING);
         for (final Map.Entry<String, Class<?>> field : domainFields.entrySet()) {
-            query.addProjection(field.getKey(), field.getValue());
+            query.select(field.getKey());
         }
 
         if (requestJSONObject.has(Domain.DOMAIN_TITLE)) {
@@ -316,7 +310,7 @@ public class DomainQueryService {
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets domains failed", e);
 
-            throw new ServiceException(e);
+            return null;
         }
 
         final int pageCount = result.optJSONObject(Pagination.PAGINATION).optInt(Pagination.PAGINATION_PAGE_COUNT);
@@ -340,9 +334,8 @@ public class DomainQueryService {
      *
      * @param domainId the specified id
      * @return a domain, return {@code null} if not found
-     * @throws ServiceException service exception
      */
-    public JSONObject getDomain(final String domainId) throws ServiceException {
+    public JSONObject getDomain(final String domainId) {
         try {
             final JSONObject ret = domainRepository.get(domainId);
             final List<JSONObject> tags = getTags(domainId);
@@ -352,7 +345,7 @@ public class DomainQueryService {
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets a domain [domainId=" + domainId + "] failed", e);
 
-            throw new ServiceException(e);
+            return null;
         }
     }
 

@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -20,9 +20,9 @@ package org.b3log.symphony.processor.advice.stopwatch;
 import org.b3log.latke.logging.Level;
 import org.b3log.latke.logging.Logger;
 import org.b3log.latke.service.annotation.Service;
-import org.b3log.latke.servlet.HTTPRequestContext;
-import org.b3log.latke.servlet.advice.AfterRequestProcessAdvice;
-import org.b3log.latke.servlet.renderer.AbstractHTTPResponseRenderer;
+import org.b3log.latke.servlet.RequestContext;
+import org.b3log.latke.servlet.advice.ProcessAdvice;
+import org.b3log.latke.servlet.renderer.AbstractResponseRenderer;
 import org.b3log.latke.util.Stopwatchs;
 import org.b3log.latke.util.Strings;
 import org.b3log.symphony.model.Common;
@@ -37,7 +37,7 @@ import java.util.Map;
  * @since 0.2.0
  */
 @Service
-public class StopwatchEndAdvice extends AfterRequestProcessAdvice {
+public class StopwatchEndAdvice extends ProcessAdvice {
 
     /**
      * Logger.
@@ -45,15 +45,15 @@ public class StopwatchEndAdvice extends AfterRequestProcessAdvice {
     private static final Logger LOGGER = Logger.getLogger(StopwatchEndAdvice.class);
 
     @Override
-    public void doAdvice(final HTTPRequestContext context, final Object ret) {
+    public void doAdvice(final RequestContext context) {
         Stopwatchs.end();
 
-        final AbstractHTTPResponseRenderer renderer = context.getRenderer();
+        final AbstractResponseRenderer renderer = context.getRenderer();
         if (null != renderer) {
             final Map<String, Object> dataModel = renderer.getRenderDataModel();
             final String requestURI = context.getRequest().getRequestURI();
 
-            final long elapsed = Stopwatchs.getElapsed("Request URI [" + requestURI + ']');
+            final long elapsed = Stopwatchs.getElapsed("Request URI [" + requestURI + "]");
             dataModel.put(Common.ELAPSED, elapsed);
         }
 

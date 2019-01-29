@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -22,18 +22,17 @@ import org.b3log.latke.ioc.Inject;
 import org.b3log.latke.ioc.Singleton;
 import org.b3log.latke.logging.Logger;
 import org.b3log.latke.model.User;
-import org.b3log.latke.servlet.HTTPRequestContext;
-import org.b3log.latke.servlet.advice.BeforeRequestProcessAdvice;
+import org.b3log.latke.servlet.RequestContext;
+import org.b3log.latke.servlet.advice.ProcessAdvice;
 import org.b3log.latke.servlet.advice.RequestProcessAdviceException;
-import org.b3log.symphony.model.Common;
 import org.b3log.symphony.model.UserExt;
 import org.b3log.symphony.service.UserMgmtService;
 import org.b3log.symphony.service.UserQueryService;
+import org.b3log.symphony.util.Sessions;
 import org.json.JSONObject;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import java.util.Map;
 
 /**
  * Login check. Gets user from request attribute named "user" if logged in.
@@ -43,7 +42,7 @@ import java.util.Map;
  * @since 0.2.5
  */
 @Singleton
-public class LoginCheck extends BeforeRequestProcessAdvice {
+public class LoginCheck extends ProcessAdvice {
 
     /**
      * Logger.
@@ -63,14 +62,14 @@ public class LoginCheck extends BeforeRequestProcessAdvice {
     private UserMgmtService userMgmtService;
 
     @Override
-    public void doAdvice(final HTTPRequestContext context, final Map<String, Object> args) throws RequestProcessAdviceException {
+    public void doAdvice(final RequestContext context) throws RequestProcessAdviceException {
         final HttpServletRequest request = context.getRequest();
 
         final JSONObject exception = new JSONObject();
-        exception.put(Keys.MSG, HttpServletResponse.SC_UNAUTHORIZED + ", " + request.getRequestURI());
+        exception.put(Keys.MSG, HttpServletResponse.SC_UNAUTHORIZED + ", " + context.requestURI());
         exception.put(Keys.STATUS_CODE, HttpServletResponse.SC_UNAUTHORIZED);
 
-        JSONObject currentUser = (JSONObject) request.getAttribute(Common.CURRENT_USER);
+        JSONObject currentUser = Sessions.getUser();
         if (null == currentUser) {
             throw new RequestProcessAdviceException(exception);
         }

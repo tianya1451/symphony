@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -49,7 +49,7 @@ import java.util.*;
  *
  * @author <a href="http://88250.b3log.org">Liang Ding</a>
  * @author <a href="http://zephyr.b3log.org">Zephyr</a>
- * @version 1.8.7.1, Jal 28, 2018
+ * @version 1.8.7.2, Nov 6, 2018
  * @since 0.2.0
  */
 @Service
@@ -107,8 +107,8 @@ public class UserQueryService {
         final int RANGE_SIZE = 64;
 
         try {
-            final Query userQuery = new Query();
-            userQuery.setCurrentPageNum(1).setPageCount(1).setPageSize(RANGE_SIZE).
+            final Query userQuery = new Query().
+                    setPage(1, RANGE_SIZE).setPageCount(1).
                     setFilter(new PropertyFilter(UserExt.USER_STATUS, FilterOperator.EQUAL, UserExt.USER_STATUS_C_VALID)).
                     addSort(UserExt.USER_ARTICLE_COUNT, SortDirection.DESCENDING).
                     addSort(UserExt.USER_COMMENT_COUNT, SortDirection.DESCENDING);
@@ -127,7 +127,7 @@ public class UserQueryService {
             }
 
             for (final JSONObject selectedUser : ret) {
-                avatarQueryService.fillUserAvatarURL(UserExt.USER_AVATAR_VIEW_MODE_C_STATIC, selectedUser);
+                avatarQueryService.fillUserAvatarURL(selectedUser);
             }
         } catch (final Exception e) {
             LOGGER.log(Level.ERROR, "Get nice users failed", e);
@@ -191,14 +191,14 @@ public class UserQueryService {
                                              final int windowSize) throws ServiceException {
         final JSONObject ret = new JSONObject();
 
-        final Query query = new Query().addSort(Keys.OBJECT_ID, SortDirection.DESCENDING)
-                .setCurrentPageNum(currentPageNum).setPageSize(pageSize)
-                .setFilter(CompositeFilterOperator.and(
+        final Query query = new Query().addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
+                setPage(currentPageNum, pageSize).
+                setFilter(CompositeFilterOperator.and(
                         new PropertyFilter(UserExt.USER_STATUS, FilterOperator.EQUAL, UserExt.USER_STATUS_C_VALID),
                         new PropertyFilter(UserExt.USER_LATEST_LOGIN_TIME, FilterOperator.GREATER_THAN_OR_EQUAL, time)
                 ));
 
-        JSONObject result = null;
+        JSONObject result;
         try {
             result = userRepository.get(query);
         } catch (final RepositoryException e) {
@@ -281,10 +281,9 @@ public class UserQueryService {
 
         final Query query = new Query().setPageCount(1).
                 setFilter(new PropertyFilter(UserExt.USER_STATUS, FilterOperator.EQUAL, UserExt.USER_STATUS_C_VALID)).
-                addProjection(User.USER_NAME, String.class).
-                addProjection(UserExt.USER_AVATAR_URL, String.class);
+                select(User.USER_NAME, UserExt.USER_AVATAR_URL);
         try {
-            final JSONObject result = userRepository.get(query); // XXX: Performance Issue
+            final JSONObject result = userRepository.get(query);
             final JSONArray array = result.optJSONArray(Keys.RESULTS);
             for (int i = 0; i < array.length(); i++) {
                 final JSONObject user = array.optJSONObject(i);
@@ -292,7 +291,7 @@ public class UserQueryService {
                 final JSONObject u = new JSONObject();
                 u.put(User.USER_NAME, user.optString(User.USER_NAME));
                 u.put(UserExt.USER_T_NAME_LOWER_CASE, user.optString(User.USER_NAME).toLowerCase());
-                final String avatar = avatarQueryService.getAvatarURLByUser(UserExt.USER_AVATAR_VIEW_MODE_C_STATIC, user, "20");
+                final String avatar = avatarQueryService.getAvatarURLByUser(user, "20");
                 u.put(UserExt.USER_AVATAR_URL, avatar);
                 USER_NAMES.add(u);
             }
@@ -390,14 +389,14 @@ public class UserQueryService {
      * Gets the administrators.
      *
      * @return administrators, returns an empty list if not found or error
-     * @throws ServiceException service exception
      */
-    public List<JSONObject> getAdmins() throws ServiceException {
+    public List<JSONObject> getAdmins() {
         try {
             return userRepository.getAdmins();
         } catch (final RepositoryException e) {
-            LOGGER.log(Level.ERROR, "Gets admins failed", e);
-            throw new ServiceException(e);
+            LOGGER.log(Level.ERROR, "Gets admins failed: " + e.getMessage());
+
+            return Collections.emptyList();
         }
     }
 
@@ -558,17 +557,15 @@ public class UserQueryService {
      *      }, ....]
      * }
      * </pre>
-     * @throws ServiceException service exception
      * @see Pagination
      */
-    public JSONObject getUsers(final JSONObject requestJSONObject) throws ServiceException {
+    public JSONObject getUsers(final JSONObject requestJSONObject) {
         final JSONObject ret = new JSONObject();
 
         final int currentPageNum = requestJSONObject.optInt(Pagination.PAGINATION_CURRENT_PAGE_NUM);
         final int pageSize = requestJSONObject.optInt(Pagination.PAGINATION_PAGE_SIZE);
         final int windowSize = requestJSONObject.optInt(Pagination.PAGINATION_WINDOW_SIZE);
-        final Query query = new Query().addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).
-                setCurrentPageNum(currentPageNum).setPageSize(pageSize);
+        final Query query = new Query().addSort(Keys.OBJECT_ID, SortDirection.DESCENDING).setPage(currentPageNum, pageSize);
 
         if (requestJSONObject.has(Common.QUERY)) {
             final String q = requestJSONObject.optString(Common.QUERY);
@@ -585,7 +582,7 @@ public class UserQueryService {
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets users failed", e);
 
-            throw new ServiceException(e);
+            return null;
         }
 
         final int pageCount = result.optJSONObject(Pagination.PAGINATION).optInt(Pagination.PAGINATION_PAGE_COUNT);
@@ -602,7 +599,7 @@ public class UserQueryService {
             final JSONObject user = users.optJSONObject(i);
             user.put(UserExt.USER_T_CREATE_TIME, new Date(user.optLong(Keys.OBJECT_ID)));
 
-            avatarQueryService.fillUserAvatarURL(UserExt.USER_AVATAR_VIEW_MODE_C_ORIGINAL, user);
+            avatarQueryService.fillUserAvatarURL(user);
 
             final JSONObject role = roleQueryService.getRole(user.optString(User.USER_ROLE));
             user.put(Role.ROLE_NAME, role.optString(Role.ROLE_NAME));
@@ -637,10 +634,9 @@ public class UserQueryService {
      *      }, ....]
      * }
      * </pre>
-     * @throws ServiceException service exception
      * @see Pagination
      */
-    public JSONObject getUsersByCity(final JSONObject requestJSONObject) throws ServiceException {
+    public JSONObject getUsersByCity(final JSONObject requestJSONObject) {
         final JSONObject ret = new JSONObject();
 
         final int currentPageNum = requestJSONObject.optInt(Pagination.PAGINATION_CURRENT_PAGE_NUM);
@@ -649,9 +645,9 @@ public class UserQueryService {
         final String city = requestJSONObject.optString(UserExt.USER_CITY);
         final long latestTime = requestJSONObject.optLong(UserExt.USER_LATEST_LOGIN_TIME);
 
-        final Query query = new Query().addSort(UserExt.USER_LATEST_LOGIN_TIME, SortDirection.DESCENDING)
-                .setCurrentPageNum(currentPageNum).setPageSize(pageSize)
-                .setFilter(CompositeFilterOperator.and(
+        final Query query = new Query().addSort(UserExt.USER_LATEST_LOGIN_TIME, SortDirection.DESCENDING).
+                setPage(currentPageNum, pageSize).
+                setFilter(CompositeFilterOperator.and(
                         new PropertyFilter(UserExt.USER_CITY, FilterOperator.EQUAL, city),
                         new PropertyFilter(UserExt.USER_GEO_STATUS, FilterOperator.EQUAL, UserExt.USER_GEO_STATUS_C_PUBLIC),
                         new PropertyFilter(UserExt.USER_STATUS, FilterOperator.EQUAL, UserExt.USER_STATUS_C_VALID),
@@ -663,7 +659,7 @@ public class UserQueryService {
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets users by city error", e);
 
-            throw new ServiceException(e);
+            return null;
         }
 
         final int pageCount = result.optJSONObject(Pagination.PAGINATION).optInt(Pagination.PAGINATION_PAGE_COUNT);
@@ -702,15 +698,14 @@ public class UserQueryService {
      *     ....
      * }
      * </pre>, returns {@code null} if not found
-     * @throws ServiceException service exception
      */
-    public JSONObject getUser(final String userId) throws ServiceException {
+    public JSONObject getUser(final String userId) {
         try {
             return userRepository.get(userId);
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets a user failed", e);
 
-            throw new ServiceException(e);
+            return null;
         }
     }
 

@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -24,19 +24,19 @@ import org.b3log.latke.logging.Level;
 import org.b3log.latke.logging.Logger;
 import org.b3log.latke.repository.*;
 import org.b3log.latke.service.LangPropsService;
-import org.b3log.latke.service.ServiceException;
 import org.b3log.latke.service.annotation.Service;
 import org.b3log.latke.util.CollectionUtils;
 import org.b3log.symphony.model.Option;
 import org.b3log.symphony.processor.channel.ArticleChannel;
 import org.b3log.symphony.processor.channel.ArticleListChannel;
-import org.b3log.symphony.processor.channel.ChatRoomChannel;
+import org.b3log.symphony.processor.channel.ChatroomChannel;
 import org.b3log.symphony.processor.channel.UserChannel;
 import org.b3log.symphony.repository.OptionRepository;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import javax.websocket.Session;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
@@ -87,7 +87,7 @@ public class OptionQueryService {
      * @return online visitor count
      */
     public int getOnlineVisitorCount() {
-        final int ret = ArticleChannel.SESSIONS.size() + ArticleListChannel.SESSIONS.size() + ChatRoomChannel.SESSIONS.size() + getOnlineMemberCount();
+        final int ret = ArticleChannel.SESSIONS.size() + ArticleListChannel.SESSIONS.size() + ChatroomChannel.SESSIONS.size() + getOnlineMemberCount();
 
         try {
             final JSONObject maxOnlineMemberCntRecord = optionRepository.get(Option.ID_C_STATISTIC_MAX_ONLINE_VISITOR_COUNT);
@@ -122,9 +122,8 @@ public class OptionQueryService {
      * Gets the statistic.
      *
      * @return statistic
-     * @throws ServiceException service exception
      */
-    public JSONObject getStatistic() throws ServiceException {
+    public JSONObject getStatistic() {
         final JSONObject ret = new JSONObject();
 
         final Query query = new Query().
@@ -142,7 +141,8 @@ public class OptionQueryService {
             return ret;
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets statistic failed", e);
-            throw new ServiceException(e);
+
+            return null;
         }
     }
 
@@ -176,9 +176,8 @@ public class OptionQueryService {
      * Gets the reserved words.
      *
      * @return reserved words
-     * @throws ServiceException service exception
      */
-    public List<JSONObject> getReservedWords() throws ServiceException {
+    public List<JSONObject> getReservedWords() {
         final Query query = new Query().
                 setFilter(new PropertyFilter(Option.OPTION_CATEGORY, FilterOperator.EQUAL, Option.CATEGORY_C_RESERVED_WORDS));
         try {
@@ -189,7 +188,7 @@ public class OptionQueryService {
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets reserved words failed", e);
 
-            throw new ServiceException(e);
+            return Collections.emptyList();
         }
     }
 
@@ -235,9 +234,8 @@ public class OptionQueryService {
      * Gets the miscellaneous.
      *
      * @return misc
-     * @throws ServiceException service exception
      */
-    public List<JSONObject> getMisc() throws ServiceException {
+    public List<JSONObject> getMisc() {
         final Query query = new Query().
                 setFilter(new PropertyFilter(Option.OPTION_CATEGORY, FilterOperator.EQUAL, Option.CATEGORY_C_MISC));
         try {
@@ -253,7 +251,8 @@ public class OptionQueryService {
             return CollectionUtils.jsonArrayToList(options);
         } catch (final RepositoryException e) {
             LOGGER.log(Level.ERROR, "Gets misc failed", e);
-            throw new ServiceException(e);
+
+            return null;
         }
     }
 

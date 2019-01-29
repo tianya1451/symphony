@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -168,7 +168,7 @@ public class TagRepository extends AbstractRepository {
      */
     public List<JSONObject> getMostUsedTags(final int num) throws RepositoryException {
         final Query query = new Query().addSort(Tag.TAG_REFERENCE_CNT, SortDirection.DESCENDING).
-                setCurrentPageNum(1).setPageSize(num).setPageCount(1);
+                setPage(1, num).setPageCount(1);
 
         return getList(query);
     }

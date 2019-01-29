@@ -1,6 +1,6 @@
 /*
  * Symphony - A modern community (forum/BBS/SNS/blog) platform written in Java.
- * Copyright (C) 2012-2018, b3log.org & hacpai.com
+ * Copyright (C) 2012-2019, b3log.org & hacpai.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -132,7 +132,7 @@ public class MailMgmtService {
 
             // select receivers 
             final Query toUserQuery = new Query();
-            toUserQuery.setCurrentPageNum(1).setPageCount(1).setPageSize(userSize).
+            toUserQuery.setPage(1, userSize).setPageCount(1).
                     setFilter(CompositeFilterOperator.and(
                             new PropertyFilter(UserExt.USER_SUB_MAIL_SEND_TIME, FilterOperator.LESS_THAN_OR_EQUAL, sevenDaysAgo),
                             new PropertyFilter(UserExt.USER_LATEST_LOGIN_TIME, FilterOperator.LESS_THAN_OR_EQUAL, sevenDaysAgo),
@@ -173,7 +173,7 @@ public class MailMgmtService {
 
             // select nice articles
             final Query articleQuery = new Query();
-            articleQuery.setCurrentPageNum(1).setPageCount(1).setPageSize(Symphonys.getInt("mail.batch.articleSize")).
+            articleQuery.setPage(1, Symphonys.getInt("mail.batch.articleSize")).setPageCount(1).
                     setFilter(CompositeFilterOperator.and(
                             new PropertyFilter(Article.ARTICLE_CREATE_TIME, FilterOperator.GREATER_THAN_OR_EQUAL, sevenDaysAgo),
                             new PropertyFilter(Article.ARTICLE_TYPE, FilterOperator.EQUAL, Article.ARTICLE_TYPE_C_NORMAL),
@@ -189,7 +189,7 @@ public class MailMgmtService {
 
                 return;
             }
-            articleQueryService.organizeArticles(UserExt.USER_AVATAR_VIEW_MODE_C_STATIC, articles);
+            articleQueryService.organizeArticles(articles);
 
             String mailSubject = "";
             int goodCnt = 0;
