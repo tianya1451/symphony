@@ -1881,13 +1881,13 @@
       "description": "文章详情表",
       "keys": [
         {
-          "name": "uuid",
+          "name": "oId",
           "type": "String",
           "length": 50,
           "description": "主键"
         },
         {
-          "name": "article_uuid",
+          "name": "articleUuid",
           "type": "String",
           "length": 50,
           "description": "文章Id"
@@ -1905,7 +1905,7 @@
           "description": "城市"
         },
         {
-          "name": "job_num",
+          "name": "jobNum",
           "type": "String",
           "length": 50,
           "description": "工号"
@@ -1923,13 +1923,13 @@
           "description": "地址"
         },
 		{
-          "name": "date_time",
+          "name": "dateTime",
           "type": "String",
           "length": 50,
           "description": "故事时间"
         },
 		{
-          "name": "info_source",
+          "name": "infoSource",
           "type": "String",
           "length": 50,
           "description": "信息来源"
@@ -1941,19 +1941,19 @@
           "description": "服务内容"
         },
 		{
-          "name": "girl_num",
+          "name": "girlNum",
           "type": "String",
           "length": 50,
           "description": "员工数"
         },
 		{
-          "name": "girl_age",
+          "name": "girlAge",
           "type": "String",
           "length": 50,
           "description": "年龄"
         },
 		{
-          "name": "girl_beauty",
+          "name": "girlBeauty",
           "type": "String",
           "length": 50,
           "description": "颜值"
@@ -1983,7 +1983,7 @@
           "description": "感受"
         },
 		{
-          "name": "contact_tip",
+          "name": "contactTip",
           "type": "String",
           "length": 200,
           "description": "联系技巧"
@@ -2012,19 +2012,19 @@
           "description": "允许浏览最低级别"
         },
 		{
-          "name": "view_point",
+          "name": "viewPoint",
           "type": "int",
           "description": "消耗积分"
         },
         {
-          "name": "insert_time",
+          "name": "insertTime",
           "type": "long",
-          "description": "insert_time"
+          "description": "insertTime"
         },
 		{
-          "name": "update_time",
+          "name": "updateTime",
           "type": "long",
-          "description": "update_time"
+          "description": "updateTime"
         }
       ]
 	},
@@ -2033,55 +2033,55 @@
       "description": "兑换码表",
       "keys": [
         {
-          "name": "uuid",
+          "name": "oId",
           "type": "String",
           "length": 50,
           "description": "主键"
         },
         {
-          "name": "member_id",
+          "name": "memberId",
           "type": "String",
           "length": 50,
           "description": "会员记录id"
         },
         {
-          "name": "goods_id",
+          "name": "goodsId",
           "type": "String",
           "length": 50,
           "description": "商品id"
         },
         {
-          "name": "order_id",
+          "name": "orderId",
           "type": "String",
           "length": 50,
           "description": "订单id"
         },
         {
-          "name": "third_order_id",
+          "name": "thirdOrderId",
           "type": "String",
           "length": 100,
           "description": "第三方订单id"
         },
         {
-          "name": "third_pay_id",
+          "name": "thirdPayId",
           "type": "String",
           "length": 100,
           "description": "第三方支付id"
         },
         {
-          "name": "goods_name",
+          "name": "goodsName",
           "type": "String",
           "length": 200,
           "description": "商品名称"
         },
         {
-          "name": "goods_price",
+          "name": "goodsPrice",
           "type": "String",
           "length": 20,
           "description": "商品价格"
         },
         {
-          "name": "actual_price",
+          "name": "actualPrice",
           "type": "String",
           "length": 20,
           "description": "实际付款价格"
@@ -2091,19 +2091,19 @@
           "length": 50,
           "description": "兑换码"
         },{
-          "name": "insert_time",
+          "name": "insertTime",
           "type": "long",
           "description": ""
         },{
-          "name": "pay_time",
+          "name": "payTime",
           "type": "long",
           "description": ""
         },{
-          "name": "valid_time",
+          "name": "validTime",
           "type": "long",
           "description": ""
         },{
-          "name": "used_time",
+          "name": "usedTime",
           "type": "long",
           "description": ""
         },{
@@ -2118,7 +2118,7 @@
       "description": "商品表",
       "keys": [
         {
-          "name": "uuid",
+          "name": "oId",
           "type": "String",
           "length": 50,
           "description": "主键"
@@ -2147,12 +2147,12 @@
           "description": "时长/天"
         },
         {
-          "name": "insert_time",
+          "name": "insertTime",
           "type": "long",
           "description": ""
         },
         {
-          "name": "update_time",
+          "name": "updateTime",
           "type": "long",
           "description": ""
         }
@@ -2163,19 +2163,19 @@
       "description": "会员表",
       "keys": [
         {
-          "name": "uuid",
+          "name": "oId",
           "type": "String",
           "length": 50,
           "description": "主键"
         },
         {
-          "name": "user_id",
+          "name": "userId",
           "type": "String",
           "length": 50,
           "description": "用户id"
         },
         {
-          "name": "role_id",
+          "name": "roleId",
           "type": "String",
           "length": 50,
           "description": "角色id"
@@ -2187,22 +2187,22 @@
           "description": "主键"
         },
         {
-          "name": "active_time",
+          "name": "activeTime",
           "type": "long",
           "description": "激活时间"
         },
         {
-          "name": "valid_time",
+          "name": "validTime",
           "type": "long",
           "description": "截止时间"
         },
         {
-          "name": "insert_time",
+          "name": "insertTime",
           "type": "long",
           "description": ""
         },
         {
-          "name": "update_time",
+          "name": "updateTime",
           "type": "long",
           "description": ""
         }
