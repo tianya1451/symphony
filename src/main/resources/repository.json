@@ -1876,6 +1876,337 @@
           "description": "0：emoji"
         }
       ]
+    },{
+	"name": "detail",
+      "description": "文章详情表",
+      "keys": [
+        {
+          "name": "uuid",
+          "type": "String",
+          "length": 50,
+          "description": "主键"
+        },
+        {
+          "name": "article_uuid",
+          "type": "String",
+          "length": 50,
+          "description": "文章Id"
+        },
+        {
+          "name": "type",
+          "type": "String",
+          "length": 50,
+          "description": "类型"
+        },
+		{
+          "name": "city",
+          "type": "String",
+          "length": 50,
+          "description": "城市"
+        },
+        {
+          "name": "job_num",
+          "type": "String",
+          "length": 50,
+          "description": "工号"
+        },
+        {
+          "name": "mobile",
+          "type": "String",
+          "length": 50,
+          "description": "手机号"
+        },
+		{
+          "name": "address",
+          "type": "String",
+          "length": 255,
+          "description": "地址"
+        },
+		{
+          "name": "date_time",
+          "type": "String",
+          "length": 50,
+          "description": "故事时间"
+        },
+		{
+          "name": "info_source",
+          "type": "String",
+          "length": 50,
+          "description": "信息来源"
+        },
+		{
+          "name": "service",
+          "type": "String",
+          "length": 100,
+          "description": "服务内容"
+        },
+		{
+          "name": "girl_num",
+          "type": "String",
+          "length": 50,
+          "description": "员工数"
+        },
+		{
+          "name": "girl_age",
+          "type": "String",
+          "length": 50,
+          "description": "年龄"
+        },
+		{
+          "name": "girl_beauty",
+          "type": "String",
+          "length": 50,
+          "description": "颜值"
+        },
+		{
+          "name": "environment",
+          "type": "String",
+          "length": 50,
+          "description": "环境评分"
+        },
+		{
+          "name": "consume",
+          "type": "String",
+          "length": 50,
+          "description": "价格"
+        },
+		{
+          "name": "security",
+          "type": "String",
+          "length": 50,
+          "description": "安全系数"
+        },
+		{
+          "name": "feeling",
+          "type": "String",
+          "length": 255,
+          "description": "感受"
+        },
+		{
+          "name": "contact_tip",
+          "type": "String",
+          "length": 200,
+          "description": "联系技巧"
+        },
+		{
+          "name": "lon",
+          "type": "String",
+          "length": 20,
+          "description": "经度"
+        },
+		{
+          "name": "lat",
+          "type": "String",
+          "length": 20,
+          "description": "纬度"
+        },
+		{
+          "name": "geohash",
+          "type": "String",
+          "length": 50,
+          "description": "geohash"
+        },
+        {
+          "name": "roleId",
+          "type": "int",
+          "description": "允许浏览最低级别"
+        },
+		{
+          "name": "view_point",
+          "type": "int",
+          "description": "消耗积分"
+        },
+        {
+          "name": "insert_time",
+          "type": "long",
+          "description": "insert_time"
+        },
+		{
+          "name": "update_time",
+          "type": "long",
+          "description": "update_time"
+        }
+      ]
+	},
+    {
+      "name": "code",
+      "description": "兑换码表",
+      "keys": [
+        {
+          "name": "uuid",
+          "type": "String",
+          "length": 50,
+          "description": "主键"
+        },
+        {
+          "name": "member_id",
+          "type": "String",
+          "length": 50,
+          "description": "会员记录id"
+        },
+        {
+          "name": "goods_id",
+          "type": "String",
+          "length": 50,
+          "description": "商品id"
+        },
+        {
+          "name": "order_id",
+          "type": "String",
+          "length": 50,
+          "description": "订单id"
+        },
+        {
+          "name": "third_order_id",
+          "type": "String",
+          "length": 100,
+          "description": "第三方订单id"
+        },
+        {
+          "name": "third_pay_id",
+          "type": "String",
+          "length": 100,
+          "description": "第三方支付id"
+        },
+        {
+          "name": "goods_name",
+          "type": "String",
+          "length": 200,
+          "description": "商品名称"
+        },
+        {
+          "name": "goods_price",
+          "type": "String",
+          "length": 20,
+          "description": "商品价格"
+        },
+        {
+          "name": "actual_price",
+          "type": "String",
+          "length": 20,
+          "description": "实际付款价格"
+        },{
+          "name": "code",
+          "type": "String",
+          "length": 50,
+          "description": "兑换码"
+        },{
+          "name": "insert_time",
+          "type": "long",
+          "description": ""
+        },{
+          "name": "pay_time",
+          "type": "long",
+          "description": ""
+        },{
+          "name": "valid_time",
+          "type": "long",
+          "description": ""
+        },{
+          "name": "used_time",
+          "type": "long",
+          "description": ""
+        },{
+          "name": "status",
+          "type": "int",
+          "description": "状态：0待使用，1已使用，2冻结"
+        }
+      ]
+    },
+    {
+      "name": "goods",
+      "description": "商品表",
+      "keys": [
+        {
+          "name": "uuid",
+          "type": "String",
+          "length": 50,
+          "description": "主键"
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "length": 200,
+          "description": "商品名称"
+        },
+        {
+          "name": "price",
+          "type": "String",
+          "length": 20,
+          "description": "价格"
+        },
+        {
+          "name": "description",
+          "type": "String",
+          "length": 255,
+          "description": "描述"
+        },
+        {
+          "name": "duration",
+          "type": "int",
+          "description": "时长/天"
+        },
+        {
+          "name": "insert_time",
+          "type": "long",
+          "description": ""
+        },
+        {
+          "name": "update_time",
+          "type": "long",
+          "description": ""
+        }
+      ]
+    },
+    {
+      "name": "member",
+      "description": "会员表",
+      "keys": [
+        {
+          "name": "uuid",
+          "type": "String",
+          "length": 50,
+          "description": "主键"
+        },
+        {
+          "name": "user_id",
+          "type": "String",
+          "length": 50,
+          "description": "用户id"
+        },
+        {
+          "name": "role_id",
+          "type": "String",
+          "length": 50,
+          "description": "角色id"
+        },
+        {
+          "name": "uuid",
+          "type": "String",
+          "length": 50,
+          "description": "主键"
+        },
+        {
+          "name": "active_time",
+          "type": "long",
+          "description": "激活时间"
+        },
+        {
+          "name": "valid_time",
+          "type": "long",
+          "description": "截止时间"
+        },
+        {
+          "name": "insert_time",
+          "type": "long",
+          "description": ""
+        },
+        {
+          "name": "update_time",
+          "type": "long",
+          "description": ""
+        }
+      ]
     }
   ]
 }
