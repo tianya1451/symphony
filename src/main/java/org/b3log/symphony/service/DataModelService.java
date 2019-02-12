@@ -259,6 +259,13 @@ public class DataModelService {
         dataModel.put("algoliaIndex", Symphonys.get("algolia.index"));
 
         fillPersonalNav(dataModel);
+
+        //如果是api请求
+        if(context.getRequest().getAttribute(Keys.HttpRequest.IS_API_REQUEST) !=null){
+            if((Boolean)context.getRequest().getAttribute(Keys.HttpRequest.IS_API_REQUEST)){
+                return ;
+            }
+        }
         fillLangs(dataModel);
         fillSideAd(dataModel);
         fillHeaderBanner(dataModel);
@@ -315,16 +322,24 @@ public class DataModelService {
             Stopwatchs.end();
         }
 
+        final String serverScheme = Latkes.getServerScheme();
+        dataModel.put(Common.WEBSOCKET_SCHEME, StringUtils.containsIgnoreCase(serverScheme, "https") ? "wss" : "ws");
+        dataModel.put(Common.MARKED_AVAILABLE, Markdowns.MARKED_AVAILABLE);
+
+
         Stopwatchs.start("Fills footer");
         try {
+            //如果是api请求
+            if(context.getRequest().getAttribute(Keys.HttpRequest.IS_API_REQUEST) !=null){
+                if((Boolean)context.getRequest().getAttribute(Keys.HttpRequest.IS_API_REQUEST)){
+                    return ;
+                }
+            }
+
             fillFooter(dataModel);
         } finally {
             Stopwatchs.end();
         }
-
-        final String serverScheme = Latkes.getServerScheme();
-        dataModel.put(Common.WEBSOCKET_SCHEME, StringUtils.containsIgnoreCase(serverScheme, "https") ? "wss" : "ws");
-        dataModel.put(Common.MARKED_AVAILABLE, Markdowns.MARKED_AVAILABLE);
     }
 
     /**
