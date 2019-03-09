@@ -2005,10 +2005,15 @@
           "type": "String",
           "length": 50,
           "description": "geohash"
+        },{
+          "name": "poiId",
+          "type": "String",
+          "length": 50,
+          "description": "poiId"
         },
         {
           "name": "roleId",
-          "type": "int",
+          "type": "String",
           "description": "允许浏览最低级别"
         },
 		{
@@ -2205,6 +2210,195 @@
           "name": "updateTime",
           "type": "long",
           "description": ""
+        }
+      ]
+    },
+    {
+      "name": "areas",
+      "description": "标准区域表",
+      "keys": [
+        {
+          "name": "oId",
+          "type": "String",
+          "length": 50,
+          "description": "主键"
+        },
+        {
+          "name": "areaName",
+          "type": "String",
+          "length": 50,
+          "description": "名称"
+        },
+        {
+          "name": "parentId",
+          "type": "String",
+          "length": 50,
+          "description": "上级编码"
+        },
+        {
+          "name": "shortName",
+          "type": "String",
+          "length": 50,
+          "description": "名称简称"
+        },
+        {
+          "name": "level",
+          "type": "int",
+          "description": "行政级别"
+        },
+        {
+          "name": "flag",
+          "type": "int",
+          "description": "逻辑状态（1：使用；0：不使用）"
+        },{
+          "name": "wgs84Lng",
+          "type": "long",
+          "description": "地球坐标系WGS84,经度"
+        },{
+          "name": "wgs84Lat",
+          "type": "long",
+          "description": "地球坐标系WGS84,纬度"
+        },{
+          "name": "gcj02Lng",
+          "type": "long",
+          "description": "火星坐标系,经度(高德、腾讯、图灵、阿里地图)"
+        },{
+          "name": "gcj02Lat",
+          "type": "long",
+          "description": "火星坐标系,纬度(高德、腾讯、图灵、阿里地图)"
+        },{
+          "name": "bd09Lng",
+          "type": "long",
+          "description": "百度坐标系,经度"
+        },{
+          "name": "bd09Lat",
+          "type": "long",
+          "description": "百度坐标系,纬度"
+        }
+      ]
+    },
+    {
+      "name": "areasExt",
+      "description": "区域关联表",
+      "keys": [
+        {
+          "name": "oId",
+          "type": "String",
+          "length": 50,
+          "description": "主键"
+        },
+        {
+          "name": "areaId",
+          "type": "String",
+          "length": 50,
+          "description": "标准区域id"
+        },
+        {
+          "name": "otherAreaId",
+          "type": "String",
+          "length": 50,
+          "description": "第三方区域id"
+        },
+        {
+          "name": "source",
+          "type": "String",
+          "length": 50,
+          "description": "第三方标志：5、唐人阁"
+        }
+      ]
+    },
+    {
+      "name": "poi",
+      "description": "兴趣点表",
+      "keys": [
+        {
+          "name": "oId",
+          "type": "String",
+          "length": 50,
+          "description": "主键"
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "length": 80,
+          "description": "名称"
+        },
+        {
+          "name": "type",
+          "type": "String",
+          "length": 50,
+          "description": "分类"
+        },
+        {
+          "name": "typeCode",
+          "type": "String",
+          "length": 10,
+          "description": "分类编号"
+        },
+        {
+          "name": "address",
+          "type": "String",
+          "length": 100,
+          "description": "地址"
+        },
+        {
+          "name": "tel",
+          "type": "String",
+          "length": 20,
+          "description": "手机号"
+        },
+        {
+          "name": "pName",
+          "type": "String",
+          "length": 20,
+          "description": "省份名称"
+        },
+        {
+          "name": "cityName",
+          "type": "String",
+          "length": 20,
+          "description": "城市名称"
+        },
+        {
+          "name": "adName",
+          "type": "String",
+          "length": 20,
+          "description": "区域名称"
+        },
+        {
+          "name": "rating",
+          "type": "int",
+          "description": "评分"
+        },
+        {
+          "name": "cost",
+          "type": "int",
+          "length": 20,
+          "description": "消费"
+        },{
+          "name": "gcj02Lng",
+          "type": "long",
+          "description": "火星坐标系,经度(高德、腾讯、图灵、阿里地图)"
+        },{
+          "name": "gcj02Lat",
+          "type": "long",
+          "description": "火星坐标系,纬度(高德、腾讯、图灵、阿里地图)"
+        },{
+          "name": "wgs84Lng",
+          "type": "long",
+          "description": "地球坐标系WGS84,经度"
+        },{
+          "name": "wgs84Lat",
+          "type": "long",
+          "description": "地球坐标系WGS84,纬度"
+        },{
+          "name": "bd09Lng",
+          "type": "long",
+          "description": "百度坐标系,经度"
+        },{
+          "name": "bd09Lat",
+          "type": "long",
+          "description": "百度坐标系,纬度"
         }
       ]
     }

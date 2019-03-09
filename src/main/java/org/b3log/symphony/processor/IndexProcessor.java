@@ -471,4 +471,30 @@ public class IndexProcessor {
         Keys.fillRuntime(dataModel);
         dataModelService.fillMinified(dataModel);
     }
+
+    @RequestProcessing(value = "/nearby", method = HttpMethod.GET)
+    @Before(StopwatchStartAdvice.class)
+    @After(StopwatchEndAdvice.class)
+    public void nearby(final RequestContext context){
+        JSONObject jsonObject=new JSONObject();
+
+        List<JSONObject> provinceList=new ArrayList<>();
+        JSONObject province=new JSONObject();
+        province.put("province","广东");
+        province.put("provinceCode","13");
+        provinceList.add(province);
+        JSONObject province2=new JSONObject();
+        province2.put("province","福建");
+        province2.put("provinceCode","123");
+        provinceList.add(province2);
+        jsonObject.put("provinceList",provinceList);
+        jsonObject.put("province","广东");
+        jsonObject.put("provinceCode","13");
+        jsonObject.put("city","深圳");
+        jsonObject.put("cityCode","401");
+        jsonObject.put("district","宝安");
+        jsonObject.put("longitude","111");
+        jsonObject.put("latitude","21");
+        context.renderJSON(jsonObject);
+    }
 }

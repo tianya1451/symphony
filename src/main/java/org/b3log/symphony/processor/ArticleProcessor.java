@@ -1363,4 +1363,7 @@ public class ArticleProcessor {
 
         context.renderTrueResult().renderMsg(langPropsService.get("stickSuccLabel"));
     }
+
+
+
 }
